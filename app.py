@@ -15,19 +15,25 @@ from streamlit_autorefresh import st_autorefresh
 from io import BytesIO
 
 from lib import store, groups as groupslib
+from lib.agency_map import QUAD_LABELS, build_map_figure, quad_of
 from lib.claude_summary import SEED_VOTE_IDEAS, build_board_data, stream_summary
 
-LEVELS = ["Analyst", "Associate", "Manager", "Director", "VP", "SVP-CEO"]
-PULSE_QUESTIONS = [
+LEVELS = ["Analyst", "Manager", "Director", "Client Officer", "VP", "SVP", "President", "CEO"]
+PULSE_YNS_QUESTIONS = [
     ("q1", "Do you feel AI is currently being applied to the right parts of your work?"),
     ("q2", "Do you feel you have a say in how AI gets applied to your work going forward?"),
 ]
+PULSE_TRUST_QUESTION = ("q4", "Do you trust AI-assisted research findings as much as fully human-led research?")
 PULSE_OPTIONS = ["Yes", "Somewhat", "No"]
-QUAD_LABELS = {
-    "tl": "Low AI · Removes Drudgery",
-    "tr": "High AI · Removes Drudgery",
-    "bl": "Low AI · Removes Judgment",
-    "br": "High AI · Removes Judgment",
+
+TAB_KEYS = ["join", "notes", "map", "vote", "pulse", "summary"]
+TAB_LABELS = {
+    "join": "Join & Groups",
+    "notes": "Good Research",
+    "map": "Agency Map",
+    "vote": "Dot Vote",
+    "pulse": "Closing Pulse",
+    "summary": "Summary",
 }
 
 st.set_page_config(
@@ -46,10 +52,13 @@ CSS = """
 .stApp { background: var(--paper); }
 html, body, [class*="css"] { font-family: 'Courier New', ui-monospace, monospace; }
 .board-eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--rust); font-weight: 700; }
-.board-title { font-family: Georgia, serif; font-size: 26px; font-weight: 700; margin: 2px 0 14px; color: var(--ink); }
+.board-title { font-family: Georgia, serif; font-size: 26px; font-weight: 700; margin: 2px 0 6px; color: var(--ink); }
+.board-status { font-size: 11px; color: var(--pencil); margin-bottom: 12px; }
 .prompt-box { border: 2px solid var(--ink); background: var(--card); padding: 14px 16px; margin-bottom: 16px; border-radius: 6px; }
+.prompt-box.soft { border: 1px solid var(--line); background: transparent; box-shadow: none; padding: 10px 14px; }
 .prompt-box .label { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--moss); font-weight: 700; margin-bottom: 4px; }
 .prompt-box p { margin: 0; font-family: Georgia, serif; font-size: 15px; line-height: 1.5; color: var(--ink); }
+.prompt-box.soft p { font-family: 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; }
 .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-top: 10px; }
 .note { background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px; padding: 12px; font-size: 13px; line-height: 1.4; color: var(--ink); box-shadow: 2px 2px 0 var(--line); }
 .roster-chip { display: inline-block; background: var(--card); border: 1px solid var(--ink); border-radius: 12px; padding: 4px 11px; font-size: 11.5px; margin: 2px 4px 2px 0; color: var(--ink); }
@@ -58,14 +67,13 @@ html, body, [class*="css"] { font-family: 'Courier New', ui-monospace, monospace
 .group-card h4 { margin: 0 0 6px; font-family: Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 5px; color: var(--ink); }
 .group-member { font-size: 12.5px; display: flex; justify-content: space-between; padding: 2px 0; color: var(--ink); }
 .group-member .lvl { color: var(--rust); font-size: 10.5px; text-transform: uppercase; }
-.quad-note { background: var(--card); border: 1px solid var(--ink); border-radius: 2px; padding: 7px 9px; font-size: 12.5px; margin-bottom: 6px; color: var(--ink); box-shadow: 1px 1px 0 var(--ink); }
-.quad-empty { color: var(--pencil); font-style: italic; font-size: 12px; }
 .pulse-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--ink); }
 .pulse-bar-track { flex: 1; height: 9px; background: var(--line); border-radius: 5px; overflow: hidden; }
 .pulse-bar-fill { height: 100%; background: var(--moss); }
 .pulse-label { width: 78px; }
 .empty-note { color: var(--pencil); font-style: italic; font-size: 13px; }
 .summary-output { border: 2px solid var(--ink); background: var(--card); border-radius: 6px; padding: 18px; font-family: Georgia, serif; font-size: 14.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; }
+div[data-testid="stButton"] button[kind="primary"] { background-color: var(--mustard); border-color: var(--ink); color: var(--ink); }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -173,6 +181,9 @@ def render_join(session_code, device_id, data):
 
         data = store.update(session_code, mutate)
         my_entry = entry
+        # auto-advance straight to the next screen — no separate continue step
+        st.session_state.active_screen = "notes"
+        st.rerun()
 
     if my_entry:
         st.success(f"You're in as {my_entry['name']} ({my_entry['level']}).")
@@ -235,32 +246,55 @@ def render_notes(session_code, data):
 def render_map(session_code, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Prompt</div>'
-        "<p>Pick a task from your work — where does AI touching it remove drudgery, and "
-        "where does it risk removing judgment? Add it to a quadrant below.</p></div>",
+        "<p>Pick a task from your work — click the exact spot on the grid that matches how much AI "
+        "is involved and what it removes, then name the task. Notes land exactly where you click.</p></div>",
         unsafe_allow_html=True,
     )
-    st.caption("← Low AI involvement · · · · High AI involvement →")
+    st.markdown(
+        '<div class="prompt-box soft"><p>'
+        "<strong>Low AI involvement</strong> = a person does this start to finish. "
+        "<strong>High AI involvement</strong> = AI does the first pass and a person reviews it.<br>"
+        "<strong>Removes drudgery</strong> = tedious work nobody misses. "
+        "<strong>Removes judgment</strong> = a decision point where a person's read of the situation mattered."
+        "</p></div>",
+        unsafe_allow_html=True,
+    )
 
-    quad_data = data["map"]
-    order = ["tl", "tr", "bl", "br"]
-    cols = st.columns(2)
-    for i, q in enumerate(order):
-        with cols[i % 2]:
-            st.markdown(f"**{QUAD_LABELS[q]}**")
-            items = quad_data.get(q, [])
-            if items:
-                for note in items:
-                    st.markdown(f'<div class="quad-note">{esc(note)}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="quad-empty">Nothing here yet</div>', unsafe_allow_html=True)
-            with st.form(f"map_form_{q}", clear_on_submit=True):
-                new_text = st.text_input("Add a task", key=f"map_input_{q}", label_visibility="collapsed", placeholder="Add a task…")
-                add = st.form_submit_button("+ Add")
-            if add and new_text.strip():
-                def mutate(d, q=q, t=new_text.strip()):
-                    d["map"].setdefault(q, []).append(t)
-                data = store.update(session_code, mutate)
-                st.rerun()
+    notes = data.get("map", [])
+    if not notes:
+        st.caption("Click anywhere on the grid to place the first note.")
+
+    seq = st.session_state.get("map_chart_seq", 0)
+    fig = build_map_figure(notes)
+    event = st.plotly_chart(fig, on_select="rerun", key=f"map_chart_{seq}", use_container_width=True)
+
+    points = event.selection.points if event else []
+    if points and points[0].get("curve_number") == 0:
+        st.session_state["pending_map_xy"] = (points[0]["x"], points[0]["y"])
+        st.session_state["map_chart_seq"] = seq + 1
+
+    pending = st.session_state.get("pending_map_xy")
+    if pending:
+        x, y = pending
+        q = quad_of(x, y)
+        with st.form("map_note_form", clear_on_submit=True):
+            st.caption(f"Naming the task at this spot — {QUAD_LABELS[q]}")
+            text = st.text_input(
+                "Task", label_visibility="collapsed",
+                placeholder="e.g. Spotting a contradiction between two data sources",
+            )
+            c1, c2 = st.columns(2)
+            save = c1.form_submit_button("Add note", type="primary")
+            cancel = c2.form_submit_button("Cancel")
+        if save and text.strip():
+            def mutate(d, x=x, y=y, t=text.strip()):
+                d["map"].append({"x": x, "y": y, "text": t})
+            store.update(session_code, mutate)
+            st.session_state.pop("pending_map_xy", None)
+            st.rerun()
+        elif cancel:
+            st.session_state.pop("pending_map_xy", None)
+            st.rerun()
 
 
 # ------------------------------------------------------------------ vote --
@@ -272,25 +306,38 @@ def render_vote(session_code, device_id, data):
         unsafe_allow_html=True,
     )
 
+    with st.form("idea_form", clear_on_submit=True):
+        idea_text = st.text_area("Add your own idea", label_visibility="collapsed", placeholder="Add your own idea to the board…", height=68)
+        add_idea = st.form_submit_button("Add idea")
+    if add_idea and idea_text.strip():
+        def mutate(d, t=idea_text.strip()):
+            d.setdefault("ideas", [])
+            if not d["ideas"]:
+                d["ideas"] = [{"id": f"seed{i}", "text": s} for i, s in enumerate(SEED_VOTE_IDEAS)]
+            d["ideas"].append({"id": "u" + uuid.uuid4().hex[:6], "text": t})
+        data = store.update(session_code, mutate)
+    else:
+        data["ideas"] = store.ensure_ideas(session_code, SEED_VOTE_IDEAS)["ideas"]
+
     my_votes = data["my_votes"].get(device_id, {})
     used = sum(my_votes.values())
     st.caption(f"{3 - used} votes remaining")
 
     votes = data["votes"]
-    for i, idea in enumerate(SEED_VOTE_IDEAS):
-        idx = str(i)
-        count = votes.get(idx, 0)
+    for idea in data["ideas"]:
+        idea_id = idea["id"]
+        count = votes.get(idea_id, 0)
         col1, col2 = st.columns([5, 1])
         with col1:
             dots = "●" * count if count else ""
-            st.markdown(f"{esc(idea)}  \n:orange[{dots}] *{count} vote{'s' if count != 1 else ''}*")
+            st.markdown(f"{esc(idea['text'])}  \n:orange[{dots}] *{count} vote{'s' if count != 1 else ''}*")
         with col2:
-            if st.button("+1", key=f"vote_{i}", disabled=used >= 3):
-                def mutate(d, idx=idx, device_id=device_id):
-                    d["votes"][idx] = d["votes"].get(idx, 0) + 1
+            if st.button("+1", key=f"vote_{idea_id}", disabled=used >= 3):
+                def mutate(d, idea_id=idea_id, device_id=device_id):
+                    d["votes"][idea_id] = d["votes"].get(idea_id, 0) + 1
                     mv = d["my_votes"].setdefault(device_id, {})
-                    mv[idx] = mv.get(idx, 0) + 1
-                data = store.update(session_code, mutate)
+                    mv[idea_id] = mv.get(idea_id, 0) + 1
+                store.update(session_code, mutate)
                 st.rerun()
 
 
@@ -303,7 +350,7 @@ def render_pulse(session_code, device_id, data):
     )
     my_pulse = data["my_pulse"].get(device_id, {})
 
-    for q, question in PULSE_QUESTIONS:
+    def render_yns(q, question):
         st.markdown(f"**{question}**")
         cols = st.columns(3)
         for i, opt in enumerate(PULSE_OPTIONS):
@@ -318,7 +365,7 @@ def render_pulse(session_code, device_id, data):
                         results[prev] = max(0, results.get(prev, 1) - 1)
                     results[opt] = results.get(opt, 0) + 1
                     mine[q] = opt
-                data = store.update(session_code, mutate)
+                store.update(session_code, mutate)
                 st.rerun()
 
         results = data["pulse"].get(q, {})
@@ -334,6 +381,42 @@ def render_pulse(session_code, device_id, data):
             )
         st.markdown(bar_rows, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+
+    q1_key, q1_text = PULSE_YNS_QUESTIONS[0]
+    q2_key, q2_text = PULSE_YNS_QUESTIONS[1]
+    render_yns(q1_key, q1_text)
+    render_yns(q2_key, q2_text)
+
+    st.markdown("**How easy or hard is it to integrate AI into your day-to-day workflow right now?**")
+    slider_val = st.slider(
+        "Ease of integration", min_value=1, max_value=5,
+        value=int(my_pulse.get("q3", 3)), label_visibility="collapsed",
+    )
+    st.caption("1 · Very hard　　　3 · Manageable　　　5 · Very easy")
+    if st.button("Submit", key="pulse_q3_submit"):
+        def mutate(d, val=slider_val, device_id=device_id):
+            mine = d["my_pulse"].setdefault(device_id, {})
+            q3list = d["pulse"].setdefault("q3", [])
+            if "q3" in mine:
+                try:
+                    q3list.remove(mine["q3"])
+                except ValueError:
+                    pass
+            q3list.append(val)
+            mine["q3"] = val
+        store.update(session_code, mutate)
+        st.rerun()
+    if "q3" in my_pulse:
+        st.caption(f"Your answer: {my_pulse['q3']}")
+    q3vals = data["pulse"].get("q3", [])
+    if q3vals:
+        st.caption(f"Room average: {sum(q3vals) / len(q3vals):.1f} / 5 · {len(q3vals)} responses")
+    else:
+        st.caption("No responses yet")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    q4_key, q4_text = PULSE_TRUST_QUESTION
+    render_yns(q4_key, q4_text)
 
 
 # --------------------------------------------------------------- summary --
@@ -354,8 +437,9 @@ def render_summary(session_code, is_facilitator, data):
 
         if st.button("Generate summary from live board", type="primary"):
             st.session_state.pop("summary_error", None)
+            ideas = data.get("ideas") or store.ensure_ideas(session_code, SEED_VOTE_IDEAS)["ideas"]
             board_data = build_board_data(
-                data["roster"], data["notes"], data["map"], data["votes"], data["pulse"]
+                data["roster"], data["notes"], data["map"], ideas, data["votes"], data["pulse"]
             )
             placeholder = st.empty()
             accumulated = ""
@@ -378,6 +462,20 @@ def render_summary(session_code, is_facilitator, data):
         st.markdown(f'<div class="summary-output">{esc(existing["text"])}</div>', unsafe_allow_html=True)
     elif not is_facilitator:
         st.markdown('<div class="empty-note">Waiting for your facilitator to generate the closing summary.</div>', unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------- nav --
+def render_nav():
+    if "active_screen" not in st.session_state:
+        st.session_state.active_screen = "join"
+
+    row1 = st.columns(3)
+    row2 = st.columns(3)
+    for col, key in zip(row1 + row2, TAB_KEYS):
+        active = st.session_state.active_screen == key
+        if col.button(TAB_LABELS[key], key=f"nav_{key}", type="primary" if active else "secondary", use_container_width=True):
+            st.session_state.active_screen = key
+            st.rerun()
 
 
 # ------------------------------------------------------------------ main --
@@ -406,24 +504,32 @@ def main():
 
     data = store.load(session_code)
 
+    last_updated = data.get("last_updated")
+    if last_updated:
+        secs = max(0, int(time.time() - last_updated))
+        status = "updated just now" if secs < 5 else f"updated {secs}s ago"
+    else:
+        status = "no activity yet"
+    st.markdown(f'<div class="board-status">{status} · syncs every few seconds</div>', unsafe_allow_html=True)
+
     if is_facilitator:
         render_facilitator_sidebar(session_code, data)
         data = store.load(session_code)
 
-    tab_join, tab_notes, tab_map, tab_vote, tab_pulse, tab_summary = st.tabs(
-        ["Join & Groups", "Good Research", "Agency Map", "Dot Vote", "Closing Pulse", "Summary"]
-    )
-    with tab_join:
+    render_nav()
+    screen = st.session_state.active_screen
+
+    if screen == "join":
         render_join(session_code, device_id, data)
-    with tab_notes:
+    elif screen == "notes":
         render_notes(session_code, data)
-    with tab_map:
+    elif screen == "map":
         render_map(session_code, data)
-    with tab_vote:
+    elif screen == "vote":
         render_vote(session_code, device_id, data)
-    with tab_pulse:
+    elif screen == "pulse":
         render_pulse(session_code, device_id, data)
-    with tab_summary:
+    elif screen == "summary":
         render_summary(session_code, is_facilitator, data)
 
 

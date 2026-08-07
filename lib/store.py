@@ -11,6 +11,7 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -44,13 +45,15 @@ def _default_data() -> dict:
         "roster": [],          # [{device_id, name, level}]
         "groups": None,        # [[person, ...], ...] or None
         "group_size": 5,
-        "notes": [],           # [{text, rotation}]
-        "map": {"tl": [], "tr": [], "bl": [], "br": []},
-        "votes": {},           # {idea_index_str: count}
-        "my_votes": {},        # {device_id: {idea_index_str: count}}
-        "pulse": {"q1": {}, "q2": {}},
-        "my_pulse": {},        # {device_id: {"q1": val, "q2": val}}
+        "notes": [],           # [{text}]
+        "map": [],             # [{x, y, text}] — x,y in 0-100
+        "ideas": None,         # [{id, text}] — lazily seeded
+        "votes": {},           # {idea_id: count}
+        "my_votes": {},        # {device_id: {idea_id: count}}
+        "pulse": {"q1": {}, "q2": {}, "q3": [], "q4": {}},
+        "my_pulse": {},        # {device_id: {"q1":.., "q2":.., "q3":.., "q4":..}}
         "summary": None,       # {"text": ..., "generated_at": ...}
+        "last_updated": None,  # epoch seconds of most recent real activity
     }
 
 
@@ -77,11 +80,14 @@ def save(session_code: str, data: dict) -> None:
 
 
 def update(session_code: str, mutator) -> dict:
-    """Load, mutate in place via `mutator(data)`, save, return data."""
+    """Load, mutate in place via `mutator(data)`, stamp last_updated, save,
+    return the resulting data. Every real participant action should route
+    through this so the "last updated" indicator reflects genuine activity."""
     lock = _lock_for(session_code)
     with lock:
         data = load(session_code)
         mutator(data)
+        data["last_updated"] = time.time()
         save(session_code, data)
         return data
 
@@ -90,3 +96,17 @@ def reset(session_code: str) -> None:
     lock = _lock_for(session_code)
     with lock:
         save(session_code, _default_data())
+
+
+def ensure_ideas(session_code: str, seed_ideas: list[str]) -> dict:
+    """Seed the idea list on first access only. Deliberately bypasses
+    `update()`'s last_updated stamp when nothing actually changed, so idle
+    page loads don't masquerade as room activity."""
+    data = load(session_code)
+    if data.get("ideas"):
+        return data
+
+    def mutate(d):
+        d["ideas"] = [{"id": f"seed{i}", "text": t} for i, t in enumerate(seed_ideas)]
+
+    return update(session_code, mutate)

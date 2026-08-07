@@ -8,12 +8,20 @@ closing synthesis that streams onto a shared screen.
 
 ## Screens
 
-1. **Join & Groups** — name + level, live roster, mixed-level breakout groups
+1. **Join & Groups** — name + level (8 distinct levels), live roster, mixed-level
+   breakout groups. Joining auto-advances straight to the next screen.
 2. **Good Research** — anonymous sticky-note wall
-3. **Agency Map** — 2×2 grid (AI involvement × drudgery/judgment)
-4. **Dot Vote** — 8 pre-seeded ideas, 3 votes per person
-5. **Closing Pulse** — two anonymous yes/somewhat/no questions with live bars
+3. **Agency Map** — a true scatter plot (not quadrant buttons): click the exact
+   spot on the grid, name the task, it lands at that precise x/y, color-coded
+   by quadrant, live for everyone
+4. **Dot Vote** — 8 pre-seeded ideas plus participant-submitted ideas, 3 votes
+   per person across all of them
+5. **Closing Pulse** — four anonymous questions: two yes/somewhat/no, a 1–5
+   ease-of-integration slider with a live room average, and a trust question
 6. **Summary** — facilitator-triggered, streamed synthesis from Claude
+
+A "last updated Xs ago" indicator in the header reflects the most recent
+activity across any screen in the session.
 
 ## How sessions work
 
