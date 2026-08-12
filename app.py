@@ -12,6 +12,7 @@ import uuid
 import qrcode
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+from streamlit_cookies_controller import CookieController
 from io import BytesIO
 
 from lib import store, groups as groupslib
@@ -492,18 +493,32 @@ def main():
     session_code = store.normalize_code(session_param)
     is_facilitator = qp.get("admin", "") == "1"
 
-    if "device_id" not in st.session_state:
-        # Deliberately NOT persisted into the URL. Writing it as a query
-        # param would make it ride along whenever a join link gets copied
-        # or forwarded after someone has already joined (e.g. sharing the
-        # address bar instead of the clean QR link), causing everyone who
-        # opens that link to inherit the same identity — their name would
-        # prefill from the earlier person's roster entry, and their votes/
-        # pulse answers would overwrite each other. A refresh does lose
-        # this device's identity (matches the original prototype), but
-        # that's a far safer tradeoff than identity collisions.
-        st.session_state.device_id = uuid.uuid4().hex[:9]
-    device_id = st.session_state.device_id
+    # Device identity lives in a browser cookie, not the URL. A cookie
+    # persists across refreshes but is scoped to that one browser, so
+    # (unlike a ?u=... query param) it can never ride along when a join
+    # link gets copied or forwarded after someone has already joined —
+    # that was the earlier bug where names prefilled wrong and votes/
+    # pulse answers collided across participants.
+    # The cookie component's first read on a fresh browser session is
+    # asynchronous: on the very first script run it can't yet know whether
+    # a cookie exists (the browser round-trip hasn't landed). If we treated
+    # that "not yet known" state as "no cookie" and wrote a fresh id right
+    # away, a real reload would race its own restore and stomp the id it
+    # was trying to recover. So: only ever persist a *new* id once we've
+    # confirmed, on a later rerun, that the round-trip already completed
+    # and there's still genuinely nothing there.
+    had_prior_cookie_sync = "cookies" in st.session_state
+    cookies = CookieController()
+    cookie_device_id = cookies.get("workshop_device_id")
+    if cookie_device_id:
+        device_id = cookie_device_id
+        st.session_state.device_id = cookie_device_id
+    else:
+        if "device_id" not in st.session_state:
+            st.session_state.device_id = uuid.uuid4().hex[:9]
+        device_id = st.session_state.device_id
+        if had_prior_cookie_sync:
+            cookies.set("workshop_device_id", device_id, max_age=60 * 60 * 24 * 30)
 
     st_autorefresh(interval=4000, key="board_autorefresh")
 

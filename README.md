@@ -78,12 +78,10 @@ streamlit run app.py
   are never linked to a name — only the roster/grouping step is.
 - The `ANTHROPIC_API_KEY` is read server-side via `st.secrets` and is never
   sent to the browser.
-- Each device's identity (used to cap votes/pulse answers to one each, and to
-  prefill "you're already in" on the join screen) lives only in that
-  browser's in-memory session — it is **not** written into the URL. A real
-  page refresh loses it (you'd show up as a "new" participant), but this is
-  the safe tradeoff: encoding identity in a shareable URL means anyone who
-  copies/forwards that link after joining (e.g. sharing their address bar
-  instead of the facilitator's clean QR link) would hand their identity to
-  everyone who opens it, causing names to prefill wrong and votes/pulse
-  answers to collide.
+- Each device's identity (used to cap votes/pulse answers to one each) lives
+  in a browser cookie (`workshop_device_id`, ~30 day expiry) rather than the
+  URL. A cookie survives page refreshes but is scoped to that one browser —
+  unlike a `?u=...` query param, it can never ride along when a join link
+  gets copied or forwarded after someone has already joined (e.g. sharing
+  an address bar instead of the facilitator's clean QR link), so identities
+  can't collide across participants the way they could with a URL-based id.
