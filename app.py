@@ -2,8 +2,9 @@
 
 Session code is passed via ?session=CODE in the URL (baked into the QR
 join link by the facilitator) and namespaces all stored data. Facilitator
-mode is unlocked via ?admin=1, set automatically when a facilitator
-creates a session from the landing screen.
+mode is unlocked by a password (st.secrets["FACILITATOR_PASSWORD"]) and
+persisted as a browser cookie — not a URL flag, which anyone could guess
+or type.
 """
 import html
 import time
@@ -85,7 +86,7 @@ def esc(s: str) -> str:
 
 
 # ---------------------------------------------------------------- landing --
-def render_facilitator_setup():
+def render_facilitator_setup(cookies):
     st.markdown('<div class="board-eyebrow">Live Session Board</div>', unsafe_allow_html=True)
     st.markdown('<div class="board-title">Field Notes: AI Optimization Workshop</div>', unsafe_allow_html=True)
     st.markdown(
@@ -96,16 +97,27 @@ def render_facilitator_setup():
     )
     default_code = "SF-01"
     code_input = st.text_input("Session code", value=default_code, help="e.g. SF-01, NYC-02 — short and unique per workshop")
+
+    configured_password = st.secrets.get("FACILITATOR_PASSWORD")
+    pw_input = None
+    if configured_password:
+        pw_input = st.text_input("Facilitator password", type="password")
+    else:
+        st.caption("No FACILITATOR_PASSWORD is set in secrets — anyone with this screen can start a session. Set one in Streamlit secrets to require it.")
+
     if st.button("Start session", type="primary"):
-        code = store.normalize_code(code_input)
-        st.query_params["session"] = code
-        st.query_params["admin"] = "1"
-        st.rerun()
+        if configured_password and pw_input != configured_password:
+            st.error("Incorrect facilitator password.")
+        else:
+            code = store.normalize_code(code_input)
+            cookies.set("workshop_facilitator", "1", max_age=60 * 60 * 24)
+            st.query_params["session"] = code
+            st.rerun()
     st.caption("Already have a join link or QR code as a participant? Ask your facilitator — this screen is for starting a new session.")
 
 
 # ------------------------------------------------------------- sidebar ui --
-def render_facilitator_sidebar(session_code, data):
+def render_facilitator_sidebar(session_code, data, cookies):
     st.sidebar.markdown("### 🎛️ Facilitator Controls")
     st.sidebar.caption(f"Session code: **{session_code}**")
 
@@ -152,6 +164,28 @@ def render_facilitator_sidebar(session_code, data):
     if st.sidebar.button("End session / start a new one"):
         st.query_params.clear()
         st.rerun()
+
+    if st.sidebar.button("Log out of facilitator mode"):
+        cookies.remove("workshop_facilitator")
+        st.rerun()
+
+
+def render_facilitator_login(cookies):
+    with st.sidebar.expander("🔒 Facilitator login"):
+        configured_password = st.secrets.get("FACILITATOR_PASSWORD")
+        if configured_password:
+            pw = st.text_input("Password", type="password", key="facilitator_login_pw")
+            if st.button("Log in", key="facilitator_login_btn"):
+                if pw == configured_password:
+                    cookies.set("workshop_facilitator", "1", max_age=60 * 60 * 24)
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        else:
+            st.caption("No FACILITATOR_PASSWORD is set in secrets — set one to require a password here.")
+            if st.button("Enable facilitator controls on this device", key="facilitator_login_nopw"):
+                cookies.set("workshop_facilitator", "1", max_age=60 * 60 * 24)
+                st.rerun()
 
 
 # ------------------------------------------------------------------ join --
@@ -483,15 +517,26 @@ def render_nav():
 
 # ------------------------------------------------------------------ main --
 def main():
+    # The cookie component's first read on a fresh browser session is
+    # asynchronous: on the very first script run it can't yet know whether
+    # a cookie exists (the browser round-trip hasn't landed). If we treated
+    # that "not yet known" state as "no cookie" and wrote a fresh value
+    # right away, a real reload would race its own restore and stomp the
+    # value it was trying to recover. So: only ever persist a *new* value
+    # once we've confirmed, on a later rerun, that the round-trip already
+    # completed and there's still genuinely nothing there. Must be checked
+    # before constructing CookieController() this run.
+    had_prior_cookie_sync = "cookies" in st.session_state
+    cookies = CookieController()
+
     qp = st.query_params
     session_param = qp.get("session", "")
 
     if not session_param:
-        render_facilitator_setup()
+        render_facilitator_setup(cookies)
         return
 
     session_code = store.normalize_code(session_param)
-    is_facilitator = qp.get("admin", "") == "1"
 
     # Device identity lives in a browser cookie, not the URL. A cookie
     # persists across refreshes but is scoped to that one browser, so
@@ -499,16 +544,6 @@ def main():
     # link gets copied or forwarded after someone has already joined —
     # that was the earlier bug where names prefilled wrong and votes/
     # pulse answers collided across participants.
-    # The cookie component's first read on a fresh browser session is
-    # asynchronous: on the very first script run it can't yet know whether
-    # a cookie exists (the browser round-trip hasn't landed). If we treated
-    # that "not yet known" state as "no cookie" and wrote a fresh id right
-    # away, a real reload would race its own restore and stomp the id it
-    # was trying to recover. So: only ever persist a *new* id once we've
-    # confirmed, on a later rerun, that the round-trip already completed
-    # and there's still genuinely nothing there.
-    had_prior_cookie_sync = "cookies" in st.session_state
-    cookies = CookieController()
     cookie_device_id = cookies.get("workshop_device_id")
     if cookie_device_id:
         device_id = cookie_device_id
@@ -519,6 +554,11 @@ def main():
         device_id = st.session_state.device_id
         if had_prior_cookie_sync:
             cookies.set("workshop_device_id", device_id, max_age=60 * 60 * 24 * 30)
+
+    # Facilitator status is also a cookie (set via password login), never
+    # a URL flag — a "?admin=1" flag is guessable/typeable by anyone, and
+    # unlike a cookie it would ride along on a copied/forwarded link too.
+    is_facilitator = cookies.get("workshop_facilitator") == "1"
 
     st_autorefresh(interval=4000, key="board_autorefresh")
 
@@ -536,8 +576,10 @@ def main():
     st.markdown(f'<div class="board-status">{status} · syncs every few seconds</div>', unsafe_allow_html=True)
 
     if is_facilitator:
-        render_facilitator_sidebar(session_code, data)
+        render_facilitator_sidebar(session_code, data, cookies)
         data = store.load(session_code)
+    else:
+        render_facilitator_login(cookies)
 
     render_nav()
     screen = st.session_state.active_screen

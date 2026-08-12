@@ -30,12 +30,18 @@ Multiple concurrent workshops (different cities/cohorts) never see each
 other's data.
 
 - **Facilitator**: open the app's base URL with no `?session=` param. You'll
-  land on a setup screen to create a session code (e.g. `SF-01`). This
-  unlocks facilitator mode (`?admin=1`) and a sidebar with the join
-  link/QR code, group-size control, and a reset-board control.
+  land on a setup screen to create a session code (e.g. `SF-01`) — if
+  `FACILITATOR_PASSWORD` is set in secrets, you'll need it here. Starting a
+  session unlocks a sidebar with the join link/QR code, group-size control,
+  and a reset-board control (which clears everything, including dot votes,
+  back to a fresh state). Facilitator status is stored as a browser cookie,
+  so it survives refreshes on that device.
+- **Co-facilitators / a different device**: on any screen inside a session,
+  open "🔒 Facilitator login" (bottom of the sidebar) and enter the
+  password to unlock the same controls on that browser too.
 - **Participants**: never see or type the session code — they just scan the
   QR code (or open the join link) the facilitator shares, which already has
-  `?session=CODE` baked in.
+  `?session=CODE` baked in. They never see a facilitator login either.
 
 ## Local development
 
@@ -57,12 +63,19 @@ streamlit run app.py
 
    ```toml
    ANTHROPIC_API_KEY = "sk-ant-your-real-key"
+   FACILITATOR_PASSWORD = "choose-a-password"
    APP_BASE_URL = "https://your-app-name.streamlit.app"
    ```
 
-   (`APP_BASE_URL` is optional — it just prefills the QR/join-link field in
-   the facilitator sidebar; you can also paste the URL in manually after
-   deploying, once you know it.)
+   `FACILITATOR_PASSWORD` is strongly recommended — without it, anyone who
+   opens the app's base URL can start sessions and unlock facilitator
+   controls. `APP_BASE_URL` is optional — it just prefills the QR/join-link
+   field in the facilitator sidebar; you can also paste the URL in manually
+   after deploying, once you know it.
+
+   If the closing summary ever fails, the error shown in the Summary tab
+   will say why (most commonly: `ANTHROPIC_API_KEY` missing or invalid) —
+   check that secret first.
 
 4. Deploy. The app is stateless/file-backed and fine to let sleep between
    sessions — no need to keep it warm.
