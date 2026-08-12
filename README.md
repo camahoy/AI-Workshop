@@ -14,8 +14,8 @@ closing synthesis that streams onto a shared screen.
 3. **Agency Map** — a true scatter plot (not quadrant buttons): click the exact
    spot on the grid, name the task, it lands at that precise x/y, color-coded
    by quadrant, live for everyone
-4. **Dot Vote** — 8 pre-seeded ideas plus participant-submitted ideas, 3 votes
-   per person across all of them
+4. **Dot Vote** — 8 pre-seeded ideas plus participant-submitted ideas; one vote
+   per idea per person, no cap on how many different ideas someone can vote for
 5. **Closing Pulse** — four anonymous questions: two yes/somewhat/no, a 1–5
    ease-of-integration slider with a live room average, and a trust question
 6. **Summary** — facilitator-triggered, streamed synthesis from Claude
@@ -78,3 +78,12 @@ streamlit run app.py
   are never linked to a name — only the roster/grouping step is.
 - The `ANTHROPIC_API_KEY` is read server-side via `st.secrets` and is never
   sent to the browser.
+- Each device's identity (used to cap votes/pulse answers to one each, and to
+  prefill "you're already in" on the join screen) lives only in that
+  browser's in-memory session — it is **not** written into the URL. A real
+  page refresh loses it (you'd show up as a "new" participant), but this is
+  the safe tradeoff: encoding identity in a shareable URL means anyone who
+  copies/forwards that link after joining (e.g. sharing their address bar
+  instead of the facilitator's clean QR link) would hand their identity to
+  everyone who opens it, causing names to prefill wrong and votes/pulse
+  answers to collide.

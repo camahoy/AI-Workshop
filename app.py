@@ -163,9 +163,9 @@ def render_join(session_code, device_id, data):
 
     my_entry = next((p for p in data["roster"] if p["device_id"] == device_id), None)
 
-    with st.form("join_form", clear_on_submit=False):
-        name = st.text_input("Name", value=my_entry["name"] if my_entry else "", placeholder="First name is fine")
-        level = st.selectbox("Level", LEVELS, index=LEVELS.index(my_entry["level"]) if my_entry else 0)
+    with st.form("join_form", clear_on_submit=True):
+        name = st.text_input("Name", value="", placeholder="First name is fine")
+        level = st.selectbox("Level", LEVELS, index=0)
         submitted = st.form_submit_button("Join the room", type="primary")
 
     if submitted and name.strip():
@@ -301,8 +301,9 @@ def render_map(session_code, data):
 def render_vote(session_code, device_id, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Prompt</div>'
-        "<p>You have 3 dots. Place them on the ideas you'd most want built first to grow "
-        "revenue or make our AI use more sustainable — no need to explain your pick.</p></div>",
+        "<p>Vote for the ideas you'd most want built first to grow revenue or make our AI use "
+        "more sustainable — no need to explain your pick. One vote per idea, vote on as many "
+        "as you want.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -320,23 +321,24 @@ def render_vote(session_code, device_id, data):
         data["ideas"] = store.ensure_ideas(session_code, SEED_VOTE_IDEAS)["ideas"]
 
     my_votes = data["my_votes"].get(device_id, {})
-    used = sum(my_votes.values())
-    st.caption(f"{3 - used} votes remaining")
 
     votes = data["votes"]
     for idea in data["ideas"]:
         idea_id = idea["id"]
         count = votes.get(idea_id, 0)
+        already_voted = idea_id in my_votes
         col1, col2 = st.columns([5, 1])
         with col1:
             dots = "●" * count if count else ""
             st.markdown(f"{esc(idea['text'])}  \n:orange[{dots}] *{count} vote{'s' if count != 1 else ''}*")
         with col2:
-            if st.button("+1", key=f"vote_{idea_id}", disabled=used >= 3):
+            if st.button("Voted" if already_voted else "+1", key=f"vote_{idea_id}", disabled=already_voted):
                 def mutate(d, idea_id=idea_id, device_id=device_id):
-                    d["votes"][idea_id] = d["votes"].get(idea_id, 0) + 1
                     mv = d["my_votes"].setdefault(device_id, {})
-                    mv[idea_id] = mv.get(idea_id, 0) + 1
+                    if idea_id in mv:
+                        return
+                    d["votes"][idea_id] = d["votes"].get(idea_id, 0) + 1
+                    mv[idea_id] = 1
                 store.update(session_code, mutate)
                 st.rerun()
 
@@ -491,10 +493,16 @@ def main():
     is_facilitator = qp.get("admin", "") == "1"
 
     if "device_id" not in st.session_state:
-        u = qp.get("u", "")
-        st.session_state.device_id = u or uuid.uuid4().hex[:9]
-        if not u:
-            qp["u"] = st.session_state.device_id
+        # Deliberately NOT persisted into the URL. Writing it as a query
+        # param would make it ride along whenever a join link gets copied
+        # or forwarded after someone has already joined (e.g. sharing the
+        # address bar instead of the clean QR link), causing everyone who
+        # opens that link to inherit the same identity — their name would
+        # prefill from the earlier person's roster entry, and their votes/
+        # pulse answers would overwrite each other. A refresh does lose
+        # this device's identity (matches the original prototype), but
+        # that's a far safer tradeoff than identity collisions.
+        st.session_state.device_id = uuid.uuid4().hex[:9]
     device_id = st.session_state.device_id
 
     st_autorefresh(interval=4000, key="board_autorefresh")
