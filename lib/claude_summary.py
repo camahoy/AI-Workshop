@@ -4,14 +4,7 @@ import streamlit as st
 from anthropic import Anthropic
 
 from lib.board_map import QUAD_LABELS, quad_of
-
-TASK_BANK = [
-    "Research data pre-processing", "Research execution", "Design / concept work", "Writing",
-    "Emailing", "Deliverable creation", "Translating language", "AI moderation",
-    "Research support", "Thinking support (second set of eyes)", "Knowledge summarization",
-    "Design generation", "Image generation", "Document creation", "Knowledge interaction",
-    "Information retrieval", "Administrative execution",
-]
+from lib.survey import to_prompt_text as survey_prompt_text
 
 SYSTEM_PROMPT = """You are synthesizing the output of a live, cross-level, cross-division working session at a market research company about AI adoption. This session exists to prime the case for a formal AI strategy initiative, gathering real evidence of what people actually need before any roadmap is proposed to the CEO. The company wants AI to create real operating efficiency and, downstream, better conditions for revenue, without relying on headcount reduction, and wants adoption to be mindful and sustainable rather than rushed.
 
@@ -21,9 +14,10 @@ Sections:
 1. What "good research" actually means to this room, synthesized from the specific moments people described, not a generic definition
 2. The meaning/delegation map: what's in the "protect this" quadrant, what's in the tension zone (meaningful but delegable, worth a real conversation about whether and how to automate), and what's the clearest automation opportunity (meaningless and delegable), note any service-line patterns
 3. The most widely-shared bottlenecks, noting which service lines raised them and which agreed, and whether bottlenecks differ meaningfully by service line (this matters, a single company-wide tool may not fit everyone)
-4. A short "case for an AI strategy initiative" paragraph: based only on what this room said, is there real evidence a coordinated initiative is worth proposing, and what's the first concrete step
+4. What the N = Everyone survey shows quantitatively, trust/readiness scores, tool usage rates, and investment-priority picks, and whether that lines up with or complicates the qualitative themes above, ground this only in the aggregate numbers and excerpts given, the excerpts are unattributed by design so do not speculate about who wrote them
+5. A short "case for an AI strategy initiative" paragraph: based only on what this room said, is there real evidence a coordinated initiative is worth proposing, and what's the first concrete step
 
-Keep it under 500 words. No markdown headers with #, short bolded-style labels using plain text. Be direct, avoid corporate filler, and do not force a false consensus if the data shows real disagreement or divergence by service line, name that divergence explicitly instead."""
+Keep it under 600 words. No markdown headers with #, short bolded-style labels using plain text. Be direct, avoid corporate filler, and do not force a false consensus if the data shows real disagreement or divergence by service line, name that divergence explicitly instead."""
 
 DEFAULT_MODEL = "claude-sonnet-5"
 
@@ -60,6 +54,8 @@ def build_board_data(data: dict) -> str:
     )
     ideas_text = "\n".join(f"- {v['count']} agree [raised by {v['tag']}]: {v['text']}" for v in ideas_ranked)
 
+    survey_text = survey_prompt_text(data.get("survey_responses", {}))
+
     return f"""
 ROOM: {len(roster)} participants. Service lines represented: {', '.join(service_lines) or 'none recorded'}. Levels: {', '.join(levels)}
 
@@ -74,6 +70,9 @@ Meaningless, delegable (automate these first): {' | '.join(map_groups['br']) or 
 
 BOTTLENECK BANK (ranked by how many people agreed it's a real bottleneck, tagged by who raised it, this is a shared-pain signal not a priority ranking):
 {ideas_text}
+
+N = EVERYONE SURVEY (aggregate-only, anonymous, quantitative attitudes plus a sample of unattributed open-ended excerpts):
+{survey_text}
 """.strip()
 
 
@@ -88,7 +87,7 @@ def stream_summary(board_data: str):
     client = Anthropic(api_key=api_key)
     with client.messages.stream(
         model=model,
-        max_tokens=1200,
+        max_tokens=1400,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": board_data}],
     ) as stream:

@@ -34,13 +34,21 @@ stored privately per device; only aggregate counts are shared.
 4. **Bottleneck Bank** — starts completely empty ("No bottlenecks posted
    yet, be the first."), fills with unlimited participant-submitted ones,
    each agree-able (no vote budget, no cap).
-5. **N = Everyone** — a read-only reference copy of the draft AI
+5. **N = Everyone** — an interactive, in-app version of the draft AI
    Perceptions & Workflow Assessment questionnaire (`questionnaire/`), a
-   longer instrument meant to be separately fielded, shown here so the room
-   can see what the full-population survey will ask.
-6. **Closing** — only a facilitator-only streamed Claude synthesis of the
-   entire board, for projecting as the session's closing moment. No
-   participant composer on this screen.
+   simplified live adaptation, not the full survey-platform instrument (see
+   `lib/survey.py`'s docstring for exactly what was simplified and why: no
+   true piped tool grids, no full MaxDiff design, D1a dropped in favor of
+   the Meaning & Delegation Map). A 4-step wizard (Back/Next, answers
+   persist across steps and page reloads via a cookie-backed device id),
+   one submission per device, editable any time via "Edit my response".
+   Individual answers are never displayed — only live aggregates (attitude
+   averages, tool usage, investment-priority picks) directly below the
+   form.
+6. **Closing** — an "N = Everyone snapshot" (the same live aggregate view
+   as the survey tab) followed by a facilitator-only streamed Claude
+   synthesis of the entire board, for projecting as the session's closing
+   moment. No participant composer on this screen.
 
 A "last updated Xs ago" indicator in the header reflects the most recent
 activity across the whole session.
@@ -112,7 +120,10 @@ streamlit run app.py
 - Anonymous by design: no name is ever collected, only Service Line, Title,
   and Level. Posts are tagged with Service Line · Title; individual
   agree/join tracking is private per device, only aggregate counts are
-  shared.
+  shared. The N = Everyone survey is stricter still — individual responses
+  are never displayed anywhere in the UI, not even tagged; only aggregate
+  stats and unattributed open-text excerpts (fed to the Claude summary)
+  ever leave `data["survey_responses"]`.
 - The `ANTHROPIC_API_KEY` is read server-side via `st.secrets` and is never
   sent to the browser.
 - Each device's identity (used to cap one agree per person per item) lives

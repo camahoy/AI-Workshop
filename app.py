@@ -20,9 +20,10 @@ from streamlit_autorefresh import st_autorefresh
 from streamlit_cookies_controller import CookieController
 from io import BytesIO
 
-from lib import questionnaire, store
+from lib import questionnaire, store, survey
 from lib.board_map import QUAD_LABELS, build_map_figure, quad_of
-from lib.claude_summary import TASK_BANK, build_board_data, stream_summary
+from lib.claude_summary import build_board_data, stream_summary
+from lib.survey import TASK_BANK
 
 LEVELS = ["Analyst", "Manager", "Director", "Client Officer", "VP", "SVP", "President", "CEO"]
 
@@ -436,6 +437,10 @@ def render_closing(session_code, device_id, data, is_facilitator):
         unsafe_allow_html=True,
     )
 
+    st.markdown("#### N = Everyone snapshot")
+    render_survey_results(data.get("survey_responses", {}))
+    st.divider()
+
     existing = data.get("summary")
 
     if is_facilitator:
@@ -469,34 +474,296 @@ def render_closing(session_code, device_id, data, is_facilitator):
 
 
 # -------------------------------------------------------------- everyone --
-def render_everyone():
-    # Static, developer-authored reference content (not user input) — safe
-    # to hand straight to markdown without HTML-escaping it.
+# Streamlit drops a widget's session_state entry once that widget stops
+# being drawn on a rerun (e.g. moving from wizard step "ab" to "cd" un-
+# instantiates step "ab"'s widgets). So per-step answers can't just live
+# in the widget keys — each step's values must be copied into a plain,
+# non-widget "survey_draft" dict in session_state *before* the step
+# changes, and widgets must read their defaults from that draft (not from
+# whatever was last stored), or Back/Next would silently drop answers.
+def sync_step_ab(draft):
+    ss = st.session_state
+    tools = ss.get("sv_b1_tools", [])
+    detail = {}
+    for t in tools:
+        if t in survey.DETAILED_TOOLS:
+            detail[t] = {
+                "freq": ss.get(f"sv_b1_freq_{t}", survey.FREQ_OPTIONS[0]),
+                "effectiveness": ss.get(f"sv_b1_eff_{t}", 3),
+            }
+    draft.update(
+        a3_tenure=ss.get("sv_a3_tenure"),
+        a4_region=(ss.get("sv_a4_region") or "").strip(),
+        b1_tools=tools,
+        b1_detail=detail,
+        b3_built=ss.get("sv_b3_built"),
+        b3a_desc=(ss.get("sv_b3a_desc") or "").strip(),
+        b4_aware=ss.get("sv_b4_aware"),
+    )
+
+
+def sync_step_cd(draft):
+    ss = st.session_state
+    draft.update(
+        c2_limitation=(ss.get("sv_c2_limitation") or "").strip(),
+        c3_rating=ss.get("sv_c3_rating"),
+        d1_tasks=ss.get("sv_d1_tasks", []),
+        d2_wand=(ss.get("sv_d2_wand") or "").strip(),
+        d3_not_want=(ss.get("sv_d3_not_want") or "").strip(),
+    )
+
+
+def sync_step_ef(draft):
+    ss = st.session_state
+    draft.update(
+        e1=ss.get("sv_e1"), e2=ss.get("sv_e2"), e3=ss.get("sv_e3"),
+        e4=ss.get("sv_e4"),
+        e5_trust=(ss.get("sv_e5_trust") or "").strip(),
+        f1=ss.get("sv_f1"), f2=ss.get("sv_f2"),
+        f3_fund=(ss.get("sv_f3_fund") or "").strip(),
+        f4_top=ss.get("sv_f4_top"), f4_low=ss.get("sv_f4_low"),
+    )
+
+
+def sync_step_g(draft):
+    ss = st.session_state
+    draft.update(g1_other=(ss.get("sv_g1_other") or "").strip())
+
+
+SYNC_FOR_STEP = {"ab": sync_step_ab, "cd": sync_step_cd, "ef": sync_step_ef, "g": sync_step_g}
+
+
+def render_step_ab(draft):
+    st.markdown("#### Section A · About you")
+    entry = draft.get("_entry")
+    if entry:
+        st.caption(f"From Join: {entry['service_line']} · {entry['title'] or 'no title'} · {entry['level']}")
+    else:
+        st.caption("Join the room first (Join tab) so your service line and title can be attached to this response.")
+    tenure_default = draft.get("a3_tenure")
+    st.selectbox(
+        "How long have you worked at the company?", survey.TENURE_OPTIONS,
+        index=survey.TENURE_OPTIONS.index(tenure_default) if tenure_default in survey.TENURE_OPTIONS else 0,
+        key="sv_a3_tenure",
+    )
+    st.text_input("Which region or market do you primarily support?", value=draft.get("a4_region", ""), key="sv_a4_region")
+
+    st.markdown("#### Section B · Current AI usage")
+    st.caption("Behavioral first — what you actually use, not what you think you should say.")
+    tools = st.multiselect(
+        "Which of these do you currently use for work, even occasionally?", survey.TOOL_OPTIONS,
+        default=draft.get("b1_tools", []), key="sv_b1_tools",
+    )
+    detailed = [t for t in tools if t in survey.DETAILED_TOOLS]
+    if detailed:
+        st.caption("For each, roughly how often, and how effective is it for your work?")
+        existing_detail = draft.get("b1_detail") or {}
+        for t in detailed:
+            st.markdown(f"**{t}**")
+            c1, c2 = st.columns(2)
+            d = existing_detail.get(t, {})
+            with c1:
+                st.select_slider("Frequency", survey.FREQ_OPTIONS, value=d.get("freq", survey.FREQ_OPTIONS[0]), key=f"sv_b1_freq_{t}")
+            with c2:
+                st.select_slider("Effectiveness (1–5)", [1, 2, 3, 4, 5], value=d.get("effectiveness", 3), key=f"sv_b1_eff_{t}")
+
+    built_default = draft.get("b3_built", "No")
+    st.radio(
+        "Have you personally built, configured, or requested a custom AI tool for your own or your team's use?",
+        ["Yes", "No"], index=["Yes", "No"].index(built_default) if built_default in ("Yes", "No") else 1,
+        key="sv_b3_built", horizontal=True,
+    )
+    if st.session_state.get("sv_b3_built") == "Yes":
+        st.text_area("Briefly describe what you built or requested.", value=draft.get("b3a_desc", ""), key="sv_b3a_desc", height=70)
+    aware_default = draft.get("b4_aware")
+    st.radio(
+        "Are you aware of AI tools/agents built by OTHER divisions that you don't have access to but think could be useful?",
+        survey.AWARE_OPTIONS, index=survey.AWARE_OPTIONS.index(aware_default) if aware_default in survey.AWARE_OPTIONS else 0,
+        key="sv_b4_aware", horizontal=True,
+    )
+
+
+def render_step_cd(draft):
+    st.markdown("#### Section C · Effectiveness of current tools")
+    st.text_area("What's the single biggest limitation of the AI tool(s) you currently use?", value=draft.get("c2_limitation", ""), key="sv_c2_limitation", height=70)
+    st.select_slider(
+        "Overall, how well do current AI tools fit the kind of work you do? (1 = poor fit, 5 = excellent fit)",
+        options=[1, 2, 3, 4, 5], value=draft.get("c3_rating", 3), key="sv_c3_rating",
+    )
+
+    st.markdown("#### Section D · Workflow")
+    st.caption("Task-level meaning and delegability is covered by the Meaning & Delegation Map tab — this is just where your time actually goes.")
+    st.multiselect(
+        "Which of these do you spend meaningful time on in a typical week?", TASK_BANK,
+        default=draft.get("d1_tasks", []), key="sv_d1_tasks",
+    )
+    st.text_area(
+        "If you had a magic wand and could hand off any part of your workflow to AI tomorrow, no limitations, what would it be and why?",
+        value=draft.get("d2_wand", ""), key="sv_d2_wand", height=70,
+    )
+    st.text_area(
+        "Is there a part of your workflow where you would NOT want AI involved, even if it were capable? What, and why?",
+        value=draft.get("d3_not_want", ""), key="sv_d3_not_want", height=70,
+    )
+
+
+def render_step_ef(draft):
+    st.markdown("#### Section E · Trust and readiness")
+    st.select_slider(
+        "How confident are you that AI-assisted output is accurate enough to use with only light review? (1 = not at all, 5 = extremely)",
+        options=[1, 2, 3, 4, 5], value=draft.get("e1", 3), key="sv_e1",
+    )
+    st.select_slider(
+        "How much do you trust AI-assisted research findings compared to fully human-led research? (1 = not nearly as much, 5 = just as much)",
+        options=[1, 2, 3, 4, 5], value=draft.get("e2", 3), key="sv_e2",
+    )
+    st.select_slider(
+        "How easy or hard is it currently to integrate AI into your day-to-day workflow? (1 = very hard, 5 = very easy)",
+        options=[1, 2, 3, 4, 5], value=draft.get("e3", 3), key="sv_e3",
+    )
+    e4_default = draft.get("e4")
+    st.radio(
+        "Which best describes how you'd like AI to show up in your role going forward?", survey.E4_OPTIONS,
+        index=survey.E4_OPTIONS.index(e4_default) if e4_default in survey.E4_OPTIONS else 1, key="sv_e4",
+    )
+    st.text_area("What would need to be true for you to trust AI more in your work?", value=draft.get("e5_trust", ""), key="sv_e5_trust", height=70)
+
+    st.markdown("#### Section F · Organizational voice and priorities")
+    st.select_slider(
+        "Do you feel you have a say in how AI tools are selected and rolled out for your team? (1 = no say, 5 = full say)",
+        options=[1, 2, 3, 4, 5], value=draft.get("f1", 3), key="sv_f1",
+    )
+    st.select_slider(
+        "Do you feel the AI tools currently provided are actually built for how your division works day to day? (1 = not at all, 5 = completely)",
+        options=[1, 2, 3, 4, 5], value=draft.get("f2", 3), key="sv_f2",
+    )
+    st.text_area(
+        "What's one thing leadership could fund or build that would make the biggest difference to your day-to-day work?",
+        value=draft.get("f3_fund", ""), key="sv_f3_fund", height=70,
+    )
+    st.caption("If the company could only prioritize ONE of these for AI investment next year — pick your top choice, and your lowest. (Simplified from a true MaxDiff exercise for live use.)")
+    top_default = draft.get("f4_top")
+    st.radio("Top priority", survey.PRIORITY_OPTIONS, index=survey.PRIORITY_OPTIONS.index(top_default) if top_default in survey.PRIORITY_OPTIONS else 0, key="sv_f4_top")
+    low_default = draft.get("f4_low")
+    st.radio("Lowest priority", survey.PRIORITY_OPTIONS, index=survey.PRIORITY_OPTIONS.index(low_default) if low_default in survey.PRIORITY_OPTIONS else 0, key="sv_f4_low")
+
+
+def render_step_g(draft):
+    st.markdown("#### Section G · Closing")
+    st.text_area(
+        "Is there anything else about AI in your work that this survey didn't ask about, but you think leadership should know?",
+        value=draft.get("g1_other", ""), key="sv_g1_other", height=90,
+    )
+    st.caption(questionnaire.CLOSING_NOTE)
+
+
+def render_survey_results(responses):
+    agg = survey.aggregate(responses)
+    n = agg["n"]
+    st.markdown(f"#### Live results — {n} response{'s' if n != 1 else ''}")
+    if n == 0:
+        st.markdown('<div class="empty-note">No survey responses yet.</div>', unsafe_allow_html=True)
+        return
+
+    st.markdown("**Attitudes (1–5 average)**")
+    for key, label in survey.SCALE_QUESTIONS:
+        avg = agg["scale_avgs"].get(key)
+        if avg is None:
+            continue
+        st.caption(f"{label} — {avg:.1f}/5")
+        st.progress(avg / 5)
+
+    st.markdown("**Tool usage**")
+    for t in survey.TOOL_OPTIONS:
+        if t == "None of the above":
+            continue
+        c = agg["tool_counts"].get(t, 0)
+        pct = c / n
+        st.caption(f"{t} — {c} ({pct:.0%})")
+        st.progress(pct)
+
+    st.markdown("**Investment priority — top vs. lowest picks**")
+    for opt in survey.PRIORITY_OPTIONS:
+        top_c = agg["priority_top"].get(opt, 0)
+        low_c = agg["priority_low"].get(opt, 0)
+        st.caption(f"{opt} — top: {top_c}, lowest: {low_c}")
+
+
+def render_everyone(session_code, device_id, data):
+    entry = my_roster_entry(data, device_id)
+    existing = data.get("survey_responses", {}).get(device_id) or {}
+    step = st.session_state.get("survey_step")
+
     st.markdown(
         f'<div class="prompt-box"><div class="label">{questionnaire.SUBTITLE}</div>'
-        f"<p>{questionnaire.PURPOSE}</p></div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(f'<div class="prompt-sub">{questionnaire.META}</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="prompt-box"><div class="label">Shown to respondent</div>'
         f"<p>{questionnaire.RESPONDENT_INTRO}</p></div>",
         unsafe_allow_html=True,
     )
+    st.markdown(f'<div class="prompt-sub">{questionnaire.META} Individual answers are never shown, only aggregates.</div>', unsafe_allow_html=True)
 
-    for section in questionnaire.SECTIONS:
-        with st.expander(section["heading"]):
-            if section.get("note"):
-                st.caption(section["note"])
-            for item in section["items"]:
-                st.markdown(f"- {item}")
+    if step is None:
+        if existing:
+            st.success("You've already submitted a response for this session.")
+            if st.button("Edit my response", key="sv_edit_btn"):
+                st.session_state["survey_draft"] = dict(existing)
+                st.session_state["survey_step"] = 0
+                st.rerun()
+        else:
+            if st.button("Start the survey", type="primary", key="sv_start_btn"):
+                st.session_state["survey_draft"] = {}
+                st.session_state["survey_step"] = 0
+                st.rerun()
+    else:
+        draft = st.session_state.setdefault("survey_draft", dict(existing))
+        draft["_entry"] = entry
 
-    st.markdown(
-        '<div class="prompt-box" style="margin-top:16px;"><div class="label">Closing note to respondent</div>'
-        f"<p>{questionnaire.CLOSING_NOTE}</p></div>",
-        unsafe_allow_html=True,
-    )
-    st.caption("This is a reference copy of the draft questionnaire — a longer, separately-fielded survey, not collected through this board.")
+        steps = survey.STEPS
+        total = len(steps)
+        st.progress(step / total)
+        st.caption(f"Step {step + 1} of {total}")
+        current = steps[step]
+        if current == "ab":
+            render_step_ab(draft)
+        elif current == "cd":
+            render_step_cd(draft)
+        elif current == "ef":
+            render_step_ef(draft)
+        elif current == "g":
+            render_step_g(draft)
+
+        c1, c2 = st.columns(2)
+        if step > 0:
+            if c1.button("Back", key="sv_back_btn"):
+                SYNC_FOR_STEP[current](draft)
+                st.session_state["survey_step"] -= 1
+                st.rerun()
+        if step < total - 1:
+            if c2.button("Next", key="sv_next_btn", type="primary"):
+                SYNC_FOR_STEP[current](draft)
+                st.session_state["survey_step"] += 1
+                st.rerun()
+        else:
+            if c2.button("Submit", key="sv_submit_btn", type="primary"):
+                SYNC_FOR_STEP[current](draft)
+                draft.pop("_entry", None)
+                response = dict(draft)
+                response.update(
+                    service_line=entry.get("service_line") if entry else None,
+                    title=entry.get("title") if entry else None,
+                    level=entry.get("level") if entry else None,
+                    submitted_at=time.time(),
+                )
+
+                def mutate(d, device_id=device_id, response=response):
+                    d.setdefault("survey_responses", {})[device_id] = response
+
+                data = store.update(session_code, mutate)
+                st.session_state.pop("survey_step", None)
+                st.session_state.pop("survey_draft", None)
+                st.rerun()
+
+    st.divider()
+    render_survey_results(data.get("survey_responses", {}))
 
 
 # ------------------------------------------------------------------- nav --
@@ -588,7 +855,7 @@ def main():
     elif screen == "ideas":
         render_ideas(session_code, device_id, data)
     elif screen == "everyone":
-        render_everyone()
+        render_everyone(session_code, device_id, data)
     elif screen == "closing":
         render_closing(session_code, device_id, data, is_facilitator)
 
