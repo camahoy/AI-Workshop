@@ -1,9 +1,9 @@
-"""Shared, file-backed storage for live workshop board data.
+"""Shared, file-backed storage for the live working-session board.
 
 Streamlit Community Cloud runs one process for the whole app, so a JSON
 file on local disk is effectively shared state across every connected
 device. Data is namespaced by session code so multiple concurrent
-workshops never see each other's data. Storage is intentionally simple
+sessions never see each other's data. Storage is intentionally simple
 (no database) since the app is expected to sleep between sessions and
 data does not need to survive a redeploy.
 """
@@ -21,6 +21,8 @@ _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
 _SAFE_CODE_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+AGREE_COLLECTIONS = ("notes", "map", "ideas", "onething")
 
 
 def normalize_code(session_code: str) -> str:
@@ -42,16 +44,15 @@ def _path(session_code: str) -> Path:
 
 def _default_data() -> dict:
     return {
-        "roster": [],          # [{device_id, name, level}]
+        "roster": [],          # [{device_id, service_line, title, level}]
         "groups": None,        # [[person, ...], ...] or None
         "group_size": 5,
-        "notes": [],           # [{text}]
-        "map": [],             # [{x, y, text}] — x,y in 0-100
-        "ideas": None,         # [{id, text}] — lazily seeded
-        "votes": {},           # {idea_id: count}
-        "my_votes": {},        # {device_id: {idea_id: count}}
-        "pulse": {"q1": {}, "q2": {}, "q3": [], "q4": {}},
-        "my_pulse": {},        # {device_id: {"q1":.., "q2":.., "q3":.., "q4":..}}
+        "notes": [],           # Good Research: [{id, text, tag}]
+        "map": [],             # Meaning & Delegation: [{id, text, x, y, tag}]
+        "ideas": None,         # Bottleneck Bank: [{id, text, tag}] tag=None for seeded
+        "onething": [],        # Closing "one thing": [{id, text, tag}]
+        "agree_counts": {k: {} for k in AGREE_COLLECTIONS},   # {collection: {item_id: count}}
+        "my_agree": {k: {} for k in AGREE_COLLECTIONS},       # {collection: {device_id: {item_id: True}}}
         "summary": None,       # {"text": ..., "generated_at": ...}
         "last_updated": None,  # epoch seconds of most recent real activity
     }
@@ -68,6 +69,9 @@ def load(session_code: str) -> dict:
         return _default_data()
     defaults = _default_data()
     defaults.update(data)
+    for k in AGREE_COLLECTIONS:
+        defaults["agree_counts"].setdefault(k, {})
+        defaults["my_agree"].setdefault(k, {})
     return defaults
 
 
@@ -99,7 +103,7 @@ def reset(session_code: str) -> None:
 
 
 def ensure_ideas(session_code: str, seed_ideas: list[str]) -> dict:
-    """Seed the idea list on first access only. Deliberately bypasses
+    """Seed the bottleneck list on first access only. Deliberately bypasses
     `update()`'s last_updated stamp when nothing actually changed, so idle
     page loads don't masquerade as room activity."""
     data = load(session_code)
@@ -107,6 +111,21 @@ def ensure_ideas(session_code: str, seed_ideas: list[str]) -> dict:
         return data
 
     def mutate(d):
-        d["ideas"] = [{"id": f"seed{i}", "text": t} for i, t in enumerate(seed_ideas)]
+        d["ideas"] = [{"id": f"seed{i}", "text": t, "tag": None} for i, t in enumerate(seed_ideas)]
 
     return update(session_code, mutate)
+
+
+def toggle_agree(d: dict, collection: str, item_id: str, device_id: str) -> None:
+    """Mutates `d` in place: flips whether `device_id` agrees with
+    `item_id` in `collection`, and keeps the aggregate count in sync.
+    Individual agree state is private (keyed by device); only the
+    aggregate count is meant to be read back and displayed."""
+    mine = d["my_agree"].setdefault(collection, {}).setdefault(device_id, {})
+    counts = d["agree_counts"].setdefault(collection, {})
+    if mine.get(item_id):
+        counts[item_id] = max(0, counts.get(item_id, 1) - 1)
+        del mine[item_id]
+    else:
+        counts[item_id] = counts.get(item_id, 0) + 1
+        mine[item_id] = True

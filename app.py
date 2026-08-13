@@ -1,10 +1,14 @@
-"""Field Notes: AI Optimization Workshop — live, cross-level workshop board.
+"""Field Notes: AI Working Session — live, cross-level, cross-division board.
 
 Session code is passed via ?session=CODE in the URL (baked into the QR
 join link by the facilitator) and namespaces all stored data. Facilitator
 mode is unlocked by a password (st.secrets["FACILITATOR_PASSWORD"]) and
-persisted as a browser cookie — not a URL flag, which anyone could guess
-or type.
+persisted as a browser cookie — not a URL flag.
+
+Identity model: no names are ever collected. Joining asks for Service
+Line, Title, and Level; every post anywhere in the app is tagged
+"{Service Line} · {Title}", never a name or device id. Level is used
+only to balance breakout groups.
 """
 import html
 import time
@@ -17,29 +21,22 @@ from streamlit_cookies_controller import CookieController
 from io import BytesIO
 
 from lib import store, groups as groupslib
-from lib.agency_map import QUAD_LABELS, build_map_figure, quad_of
-from lib.claude_summary import SEED_VOTE_IDEAS, build_board_data, stream_summary
+from lib.board_map import QUAD_LABELS, build_map_figure, quad_of
+from lib.claude_summary import SEED_BOTTLENECKS, TASK_BANK, build_board_data, stream_summary
 
 LEVELS = ["Analyst", "Manager", "Director", "Client Officer", "VP", "SVP", "President", "CEO"]
-PULSE_YNS_QUESTIONS = [
-    ("q1", "Do you feel AI is currently being applied to the right parts of your work?"),
-    ("q2", "Do you feel you have a say in how AI gets applied to your work going forward?"),
-]
-PULSE_TRUST_QUESTION = ("q4", "Do you trust AI-assisted research findings as much as fully human-led research?")
-PULSE_OPTIONS = ["Yes", "Somewhat", "No"]
 
-TAB_KEYS = ["join", "notes", "map", "vote", "pulse", "summary"]
+TAB_KEYS = ["join", "notes", "map", "ideas", "closing"]
 TAB_LABELS = {
     "join": "Join & Groups",
     "notes": "Good Research",
-    "map": "Agency Map",
-    "vote": "Dot Vote",
-    "pulse": "Closing Pulse",
-    "summary": "Summary",
+    "map": "Meaning & Delegation",
+    "ideas": "Bottleneck Bank",
+    "closing": "Closing",
 }
 
 st.set_page_config(
-    page_title="Field Notes: AI Workshop Board",
+    page_title="Field Notes: AI Working Session",
     page_icon="📝",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -54,25 +51,24 @@ CSS = """
 .stApp { background: var(--paper); }
 html, body, [class*="css"] { font-family: 'Courier New', ui-monospace, monospace; }
 .board-eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--rust); font-weight: 700; }
-.board-title { font-family: Georgia, serif; font-size: 26px; font-weight: 700; margin: 2px 0 6px; color: var(--ink); }
+.board-title { font-family: Georgia, serif; font-size: 24px; font-weight: 700; margin: 2px 0 6px; color: var(--ink); }
 .board-status { font-size: 11px; color: var(--pencil); margin-bottom: 12px; }
-.prompt-box { border: 2px solid var(--ink); background: var(--card); padding: 14px 16px; margin-bottom: 16px; border-radius: 6px; }
-.prompt-box.soft { border: 1px solid var(--line); background: transparent; box-shadow: none; padding: 10px 14px; }
+.prompt-box { border: 2px solid var(--ink); background: var(--card); padding: 14px 16px; margin-bottom: 8px; border-radius: 6px; }
 .prompt-box .label { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--moss); font-weight: 700; margin-bottom: 4px; }
 .prompt-box p { margin: 0; font-family: Georgia, serif; font-size: 15px; line-height: 1.5; color: var(--ink); }
-.prompt-box.soft p { font-family: 'Courier New', monospace; font-size: 12.5px; line-height: 1.55; }
-.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-top: 10px; }
-.note { background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px; padding: 12px; font-size: 13px; line-height: 1.4; color: var(--ink); box-shadow: 2px 2px 0 var(--line); }
-.roster-chip { display: inline-block; background: var(--card); border: 1px solid var(--ink); border-radius: 12px; padding: 4px 11px; font-size: 11.5px; margin: 2px 4px 2px 0; color: var(--ink); }
+.prompt-sub { font-size: 12px; line-height: 1.5; color: var(--pencil); margin: 0 0 16px; }
+.note { background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px; padding: 12px; font-size: 13px; line-height: 1.4; color: var(--ink); box-shadow: 2px 2px 0 var(--line); margin-bottom: 2px; }
+.note .tag { display: block; margin-top: 8px; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--rust); font-weight: 700; }
+.note.q-tl { border-left: 4px solid #4f6d5a; }
+.note.q-tr { border-left: 4px solid #c98a2c; }
+.note.q-bl { border-left: 4px solid #6b7270; }
+.note.q-br { border-left: 4px solid #a8532f; }
+.roster-chip { display: inline-block; background: var(--card); border: 1px solid var(--ink); border-radius: 12px; padding: 4px 11px; font-size: 11px; margin: 2px 4px 2px 0; color: var(--ink); }
 .roster-chip .lvl { color: var(--rust); font-weight: 700; }
 .group-card { border: 1.5px solid var(--ink); background: var(--card); border-radius: 5px; padding: 12px 14px; margin-bottom: 10px; }
 .group-card h4 { margin: 0 0 6px; font-family: Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 5px; color: var(--ink); }
-.group-member { font-size: 12.5px; display: flex; justify-content: space-between; padding: 2px 0; color: var(--ink); }
-.group-member .lvl { color: var(--rust); font-size: 10.5px; text-transform: uppercase; }
-.pulse-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--ink); }
-.pulse-bar-track { flex: 1; height: 9px; background: var(--line); border-radius: 5px; overflow: hidden; }
-.pulse-bar-fill { height: 100%; background: var(--moss); }
-.pulse-label { width: 78px; }
+.group-member { font-size: 12px; padding: 2px 0; color: var(--ink); }
+.group-member .lvl { color: var(--rust); font-size: 10px; text-transform: uppercase; }
 .empty-note { color: var(--pencil); font-style: italic; font-size: 13px; }
 .summary-output { border: 2px solid var(--ink); background: var(--card); border-radius: 6px; padding: 18px; font-family: Georgia, serif; font-size: 14.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; }
 div[data-testid="stButton"] button[kind="primary"] { background-color: var(--mustard); border-color: var(--ink); color: var(--ink); }
@@ -85,10 +81,23 @@ def esc(s: str) -> str:
     return html.escape(s or "")
 
 
+def my_roster_entry(data, device_id):
+    return next((p for p in data["roster"] if p["device_id"] == device_id), None)
+
+
+def tag_for(entry) -> str:
+    if not entry:
+        return "Unspecified"
+    parts = [entry.get("service_line") or "Unspecified"]
+    if entry.get("title"):
+        parts.append(entry["title"])
+    return " · ".join(parts)
+
+
 # ---------------------------------------------------------------- landing --
 def render_facilitator_setup(cookies):
     st.markdown('<div class="board-eyebrow">Live Session Board</div>', unsafe_allow_html=True)
-    st.markdown('<div class="board-title">Field Notes: AI Optimization Workshop</div>', unsafe_allow_html=True)
+    st.markdown('<div class="board-title">Field Notes: AI Working Session</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="prompt-box"><div class="label">Facilitator setup</div>'
         "<p>This link has no active session. Start one below, then share the "
@@ -96,7 +105,7 @@ def render_facilitator_setup(cookies):
         unsafe_allow_html=True,
     )
     default_code = "SF-01"
-    code_input = st.text_input("Session code", value=default_code, help="e.g. SF-01, NYC-02 — short and unique per workshop")
+    code_input = st.text_input("Session code", value=default_code, help="e.g. SF-01, NYC-02 — short and unique per session")
 
     configured_password = st.secrets.get("FACILITATOR_PASSWORD")
     pw_input = None
@@ -188,23 +197,54 @@ def render_facilitator_login(cookies):
                 st.rerun()
 
 
+# --------------------------------------------------------- agree wall item --
+def render_agree_item(session_code, device_id, data, collection, item, tag_label=None, quad=None):
+    item_id = item["id"]
+    label = tag_label if tag_label is not None else esc(item.get("tag") or "Unspecified")
+    quad_class = f" q-{quad}" if quad else ""
+    st.markdown(
+        f'<div class="note{quad_class}">{esc(item["text"])}<span class="tag">{label}</span></div>',
+        unsafe_allow_html=True,
+    )
+    counts = data["agree_counts"].get(collection, {})
+    mine = data["my_agree"].get(collection, {}).get(device_id, {})
+    agreed = item_id in mine
+    count = counts.get(item_id, 0)
+    c1, c2 = st.columns([1, 3])
+    with c1:
+        if st.button("✓ Agreed" if agreed else "Agree", key=f"agree_{collection}_{item_id}"):
+            def mutate(d, collection=collection, item_id=item_id, device_id=device_id):
+                store.toggle_agree(d, collection, item_id, device_id)
+            store.update(session_code, mutate)
+            st.rerun()
+    with c2:
+        st.markdown(f'<div style="padding-top:8px; font-size:11px; color:var(--pencil);">{count} agree</div>', unsafe_allow_html=True)
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+
 # ------------------------------------------------------------------ join --
 def render_join(session_code, device_id, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Step 1</div>'
-        "<p>Enter your name and level so we can mix breakout groups across the room.</p></div>",
+        "<p>No name is collected. Everything you post is shown under your service line and title, not your name.</p></div>",
         unsafe_allow_html=True,
     )
 
-    my_entry = next((p for p in data["roster"] if p["device_id"] == device_id), None)
+    my_entry = my_roster_entry(data, device_id)
 
     with st.form("join_form", clear_on_submit=True):
-        name = st.text_input("Name", value="", placeholder="First name is fine")
-        level = st.selectbox("Level", LEVELS, index=0)
+        service_line = st.text_input("Service Line / Division", value="", placeholder="e.g. Data Processing, AM, Stats, Client Service")
+        title = st.text_input("Title", value="", placeholder="e.g. Senior Research Analyst")
+        level = st.selectbox("Level (used only to mix breakout groups)", LEVELS, index=0)
         submitted = st.form_submit_button("Join the room", type="primary")
 
-    if submitted and name.strip():
-        entry = {"device_id": device_id, "name": name.strip(), "level": level}
+    if submitted and service_line.strip():
+        entry = {
+            "device_id": device_id,
+            "service_line": service_line.strip(),
+            "title": title.strip(),
+            "level": level,
+        }
 
         def mutate(d):
             roster = d["roster"]
@@ -221,17 +261,17 @@ def render_join(session_code, device_id, data):
         st.rerun()
 
     if my_entry:
-        st.success(f"You're in as {my_entry['name']} ({my_entry['level']}).")
+        st.success(f"You're in as {my_entry['service_line']} · {my_entry['title'] or 'no title'} · {my_entry['level']}.")
 
     st.markdown(
         '<div class="prompt-box" style="margin-top:20px;"><div class="label">Who\'s here</div>'
-        "<p style=\"font-size:13px;\">Everyone who's joined so far — this list feeds the breakout groups.</p></div>",
+        "<p style=\"font-size:13px;\">Everyone who's joined so far, shown by service line, title, and level. This feeds the breakout groups.</p></div>",
         unsafe_allow_html=True,
     )
     roster = data["roster"]
     if roster:
         chips = "".join(
-            f'<span class="roster-chip">{esc(p["name"])} <span class="lvl">· {esc(p["level"])}</span></span>'
+            f'<span class="roster-chip">{esc(p["service_line"])} <span class="lvl">· {esc(p["title"] or "no title")} · {esc(p["level"])}</span></span>'
             for p in roster
         )
         st.markdown(chips, unsafe_allow_html=True)
@@ -244,7 +284,7 @@ def render_join(session_code, device_id, data):
         cols = st.columns(2)
         for i, g in enumerate(groups):
             members = "".join(
-                f'<div class="group-member">{esc(p["name"])} <span class="lvl">{esc(p["level"])}</span></div>'
+                f'<div class="group-member">{esc(p["service_line"])} <span class="lvl">{esc(p["title"] or "")} · {esc(p["level"])}</span></div>'
                 for p in g
             )
             with cols[i % 2]:
@@ -255,49 +295,77 @@ def render_join(session_code, device_id, data):
 
 
 # ----------------------------------------------------------------- notes --
-def render_notes(session_code, data):
+def render_notes(session_code, device_id, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Prompt</div>'
-        '<p>Good research means ___. Be specific — not "rigor" alone, but a moment where it showed up.</p></div>',
+        "<p>Think of one specific project, not research in general. What did you personally catch, decide, "
+        "or push back on, something the client never saw, that would have gone wrong without you? "
+        "Describe that one moment.</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="prompt-sub">Be specific: what almost happened, and what did you do instead? '
+        'Avoid general statements like "attention to detail matters."</div>',
         unsafe_allow_html=True,
     )
     with st.form("note_form", clear_on_submit=True):
-        text = st.text_area("Your note", label_visibility="collapsed", placeholder="Type your note and post it to the wall…", height=80)
+        text = st.text_area("Your note", label_visibility="collapsed", placeholder="Describe the specific moment…", height=90)
         submitted = st.form_submit_button("Post", type="primary")
     if submitted and text.strip():
-        def mutate(d):
-            d["notes"].append({"text": text.strip()})
+        entry = my_roster_entry(data, device_id)
+
+        def mutate(d, t=text.strip(), tag=tag_for(entry)):
+            d["notes"].append({"id": "n" + uuid.uuid4().hex[:8], "text": t, "tag": tag})
         data = store.update(session_code, mutate)
 
     notes = data["notes"]
     if notes:
-        cards = "".join(f'<div class="note">{esc(n["text"])}</div>' for n in reversed(notes))
-        st.markdown(f'<div class="wall">{cards}</div>', unsafe_allow_html=True)
+        for n in reversed(notes):
+            render_agree_item(session_code, device_id, data, "notes", n)
     else:
-        st.markdown('<div class="empty-note">No notes yet — be the first to post.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="empty-note">No notes yet, be the first to post.</div>', unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------- map --
-def render_map(session_code, data):
+def render_map(session_code, device_id, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Prompt</div>'
-        "<p>Pick a task from your work — click the exact spot on the grid that matches how much AI "
-        "is involved and what it removes, then name the task. Notes land exactly where you click.</p></div>",
+        "<p>Pick a task from your work. Is it meaningful to you, does it give you accomplishment, satisfaction, "
+        "or a sense of connection to your work? Separately: could you delegate it entirely, if you stopped doing "
+        "it yourself, would anything important change? Place it where both are true.</p></div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="prompt-box soft"><p>'
-        "<strong>Low AI involvement</strong> = a person does this start to finish. "
-        "<strong>High AI involvement</strong> = AI does the first pass and a person reviews it.<br>"
-        "<strong>Removes drudgery</strong> = tedious work nobody misses. "
-        "<strong>Removes judgment</strong> = a decision point where a person's read of the situation mattered."
-        "</p></div>",
+        '<div class="prompt-sub"><strong>Meaningful</strong> = gives you a sense of accomplishment, satisfaction, '
+        "or connection to your motivation for the work. <strong>Delegable</strong> = if you stopped doing this "
+        "yourself, nothing important would change, it doesn't require your specific judgment or autonomy.</div>",
         unsafe_allow_html=True,
     )
 
+    # The naming field below is keyed with a generation counter that bumps
+    # on every event that should force its displayed value (a task-bank
+    # click, or a fresh grid click). A stable key relying on session_state
+    # to pre-seed an *existing* widget races Streamlit's plotly on_select
+    # rerun — the widget can end up created before its seeded value has
+    # been round-tripped, silently reverting to empty. A brand-new key has
+    # no prior frontend state to race against, so its `value=` always wins.
+    if "map_field_gen" not in st.session_state:
+        st.session_state["map_field_gen"] = 0
+    if "map_selected_task" not in st.session_state:
+        st.session_state["map_selected_task"] = ""
+
+    st.caption("Task bank — tap one to prefill the note field, or free-type your own after clicking the grid.")
+    cols = st.columns(3)
+    for i, task in enumerate(TASK_BANK):
+        with cols[i % 3]:
+            if st.button(task, key=f"taskbank_{i}", use_container_width=True):
+                st.session_state["map_selected_task"] = task
+                st.session_state["map_field_gen"] += 1
+                st.rerun()
+
     notes = data.get("map", [])
     if not notes:
-        st.caption("Click anywhere on the grid to place the first note.")
+        st.caption("Click anywhere on the grid to place the first task.")
 
     seq = st.session_state.get("map_chart_seq", 0)
     fig = build_map_figure(notes)
@@ -307,162 +375,104 @@ def render_map(session_code, data):
     if points and points[0].get("curve_number") == 0:
         st.session_state["pending_map_xy"] = (points[0]["x"], points[0]["y"])
         st.session_state["map_chart_seq"] = seq + 1
+        st.session_state["map_field_gen"] += 1
 
     pending = st.session_state.get("pending_map_xy")
     if pending:
         x, y = pending
         q = quad_of(x, y)
-        with st.form("map_note_form", clear_on_submit=True):
-            st.caption(f"Naming the task at this spot — {QUAD_LABELS[q]}")
-            text = st.text_input(
-                "Task", label_visibility="collapsed",
-                placeholder="e.g. Spotting a contradiction between two data sources",
-            )
-            c1, c2 = st.columns(2)
-            save = c1.form_submit_button("Add note", type="primary")
-            cancel = c2.form_submit_button("Cancel")
+        st.caption(f"Naming the task at this spot — {QUAD_LABELS[q]}")
+        gen = st.session_state["map_field_gen"]
+        text = st.text_input(
+            "Task", key=f"map_task_text_{gen}", value=st.session_state.get("map_selected_task", ""),
+            label_visibility="collapsed",
+            placeholder="e.g. Spotting a contradiction between two data sources",
+        )
+        c1, c2 = st.columns(2)
+        save = c1.button("Add note", key="map_add_btn", type="primary")
+        cancel = c2.button("Cancel", key="map_cancel_btn")
         if save and text.strip():
-            def mutate(d, x=x, y=y, t=text.strip()):
-                d["map"].append({"x": x, "y": y, "text": t})
+            entry = my_roster_entry(data, device_id)
+
+            def mutate(d, x=x, y=y, t=text.strip(), tag=tag_for(entry)):
+                d["map"].append({"id": "m" + uuid.uuid4().hex[:8], "text": t, "x": x, "y": y, "tag": tag})
             store.update(session_code, mutate)
             st.session_state.pop("pending_map_xy", None)
+            st.session_state["map_selected_task"] = ""
             st.rerun()
         elif cancel:
             st.session_state.pop("pending_map_xy", None)
             st.rerun()
 
+    if notes:
+        st.markdown("#### Placed so far")
+        for n in reversed(notes):
+            render_agree_item(session_code, device_id, data, "map", n, quad=quad_of(n["x"], n["y"]))
 
-# ------------------------------------------------------------------ vote --
-def render_vote(session_code, device_id, data):
+
+# ----------------------------------------------------------------- ideas --
+def render_ideas(session_code, device_id, data):
     st.markdown(
         '<div class="prompt-box"><div class="label">Prompt</div>'
-        "<p>Vote for the ideas you'd most want built first to grow revenue or make our AI use "
-        "more sustainable — no need to explain your pick. One vote per idea, vote on as many "
-        "as you want.</p></div>",
+        "<p>What's a bottleneck in your own role, something that slows you down or gets in your way, that AI "
+        "could realistically help with? Describe the bottleneck itself, not a solution. Add as many as apply "
+        "to your role.</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="prompt-sub">Agreeing with someone else\'s bottleneck shows it\'s shared, it\'s not a ranking '
+        "of what matters most. Different service lines have different bottlenecks, that's expected.</div>",
         unsafe_allow_html=True,
     )
 
     with st.form("idea_form", clear_on_submit=True):
-        idea_text = st.text_area("Add your own idea", label_visibility="collapsed", placeholder="Add your own idea to the board…", height=68)
-        add_idea = st.form_submit_button("Add idea")
+        idea_text = st.text_area("Add a bottleneck", label_visibility="collapsed", placeholder="What slows you down that AI could realistically help with?", height=80)
+        add_idea = st.form_submit_button("Add bottleneck", type="primary")
     if add_idea and idea_text.strip():
-        def mutate(d, t=idea_text.strip()):
+        entry = my_roster_entry(data, device_id)
+
+        def mutate(d, t=idea_text.strip(), tag=tag_for(entry)):
             d.setdefault("ideas", [])
             if not d["ideas"]:
-                d["ideas"] = [{"id": f"seed{i}", "text": s} for i, s in enumerate(SEED_VOTE_IDEAS)]
-            d["ideas"].append({"id": "u" + uuid.uuid4().hex[:6], "text": t})
+                d["ideas"] = [{"id": f"seed{i}", "text": s, "tag": None} for i, s in enumerate(SEED_BOTTLENECKS)]
+            d["ideas"].append({"id": "u" + uuid.uuid4().hex[:8], "text": t, "tag": tag})
         data = store.update(session_code, mutate)
     else:
-        data["ideas"] = store.ensure_ideas(session_code, SEED_VOTE_IDEAS)["ideas"]
+        data["ideas"] = store.ensure_ideas(session_code, SEED_BOTTLENECKS)["ideas"]
 
-    my_votes = data["my_votes"].get(device_id, {})
-
-    votes = data["votes"]
     for idea in data["ideas"]:
-        idea_id = idea["id"]
-        count = votes.get(idea_id, 0)
-        already_voted = idea_id in my_votes
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            dots = "●" * count if count else ""
-            st.markdown(f"{esc(idea['text'])}  \n:orange[{dots}] *{count} vote{'s' if count != 1 else ''}*")
-        with col2:
-            if st.button("Voted" if already_voted else "+1", key=f"vote_{idea_id}", disabled=already_voted):
-                def mutate(d, idea_id=idea_id, device_id=device_id):
-                    mv = d["my_votes"].setdefault(device_id, {})
-                    if idea_id in mv:
-                        return
-                    d["votes"][idea_id] = d["votes"].get(idea_id, 0) + 1
-                    mv[idea_id] = 1
-                store.update(session_code, mutate)
-                st.rerun()
+        label = f"Shared by {esc(idea['tag'])}" if idea.get("tag") else "Starter bottleneck"
+        render_agree_item(session_code, device_id, data, "ideas", idea, tag_label=label)
 
 
-# ----------------------------------------------------------------- pulse --
-def render_pulse(session_code, device_id, data):
+# --------------------------------------------------------------- closing --
+def render_closing(session_code, device_id, data, is_facilitator):
     st.markdown(
-        '<div class="prompt-box"><div class="label">Anonymous — pick one for each</div>'
-        "<p>Be honest. This is the number we're actually tracking after today.</p></div>",
+        '<div class="prompt-box"><div class="label">Prompt</div>'
+        "<p>If leadership funded one thing coming out of today, what should it be? Short and specific.</p></div>",
         unsafe_allow_html=True,
     )
-    my_pulse = data["my_pulse"].get(device_id, {})
+    with st.form("onething_form", clear_on_submit=True):
+        text = st.text_area("Your ask", label_visibility="collapsed", placeholder="One concrete thing, in your own words…", height=80)
+        submitted = st.form_submit_button("Post", type="primary")
+    if submitted and text.strip():
+        entry = my_roster_entry(data, device_id)
 
-    def render_yns(q, question):
-        st.markdown(f"**{question}**")
-        cols = st.columns(3)
-        for i, opt in enumerate(PULSE_OPTIONS):
-            selected = my_pulse.get(q) == opt
-            label = f"✅ {opt}" if selected else opt
-            if cols[i].button(label, key=f"pulse_{q}_{opt}"):
-                def mutate(d, q=q, opt=opt, device_id=device_id):
-                    mine = d["my_pulse"].setdefault(device_id, {})
-                    prev = mine.get(q)
-                    results = d["pulse"].setdefault(q, {})
-                    if prev:
-                        results[prev] = max(0, results.get(prev, 1) - 1)
-                    results[opt] = results.get(opt, 0) + 1
-                    mine[q] = opt
-                store.update(session_code, mutate)
-                st.rerun()
+        def mutate(d, t=text.strip(), tag=tag_for(entry)):
+            d["onething"].append({"id": "o" + uuid.uuid4().hex[:8], "text": t, "tag": tag})
+        data = store.update(session_code, mutate)
 
-        results = data["pulse"].get(q, {})
-        total = sum(results.values())
-        bar_rows = ""
-        for opt in PULSE_OPTIONS:
-            c = results.get(opt, 0)
-            pct = round((c / total) * 100) if total else 0
-            bar_rows += (
-                f'<div class="pulse-bar-row"><span class="pulse-label">{opt}</span>'
-                f'<div class="pulse-bar-track"><div class="pulse-bar-fill" style="width:{pct}%"></div></div>'
-                f"<span>{pct}% ({c})</span></div>"
-            )
-        st.markdown(bar_rows, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-    q1_key, q1_text = PULSE_YNS_QUESTIONS[0]
-    q2_key, q2_text = PULSE_YNS_QUESTIONS[1]
-    render_yns(q1_key, q1_text)
-    render_yns(q2_key, q2_text)
-
-    st.markdown("**How easy or hard is it to integrate AI into your day-to-day workflow right now?**")
-    slider_val = st.slider(
-        "Ease of integration", min_value=1, max_value=5,
-        value=int(my_pulse.get("q3", 3)), label_visibility="collapsed",
-    )
-    st.caption("1 · Very hard　　　3 · Manageable　　　5 · Very easy")
-    if st.button("Submit", key="pulse_q3_submit"):
-        def mutate(d, val=slider_val, device_id=device_id):
-            mine = d["my_pulse"].setdefault(device_id, {})
-            q3list = d["pulse"].setdefault("q3", [])
-            if "q3" in mine:
-                try:
-                    q3list.remove(mine["q3"])
-                except ValueError:
-                    pass
-            q3list.append(val)
-            mine["q3"] = val
-        store.update(session_code, mutate)
-        st.rerun()
-    if "q3" in my_pulse:
-        st.caption(f"Your answer: {my_pulse['q3']}")
-    q3vals = data["pulse"].get("q3", [])
-    if q3vals:
-        st.caption(f"Room average: {sum(q3vals) / len(q3vals):.1f} / 5 · {len(q3vals)} responses")
+    onething = data["onething"]
+    if onething:
+        for n in reversed(onething):
+            render_agree_item(session_code, device_id, data, "onething", n)
     else:
-        st.caption("No responses yet")
-    st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="empty-note">No submissions yet.</div>', unsafe_allow_html=True)
 
-    q4_key, q4_text = PULSE_TRUST_QUESTION
-    render_yns(q4_key, q4_text)
-
-
-# --------------------------------------------------------------- summary --
-def render_summary(session_code, is_facilitator, data):
     st.markdown(
-        '<div class="prompt-box"><div class="label">For facilitators</div>'
-        "<p>Pull everything the room posted — notes, agency map, votes, pulse — into one "
-        "synthesis focused on two questions: how do we raise revenue, and how do we implement "
-        "AI in a mindful, sustainable way that doesn't rely on headcount cuts.</p></div>",
+        '<div class="prompt-box" style="margin-top:24px;"><div class="label">For facilitators</div>'
+        "<p>Pull everything the room posted into one synthesis for leadership, grounded in what was actually "
+        "said, not general AI strategy talk.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -474,10 +484,8 @@ def render_summary(session_code, is_facilitator, data):
 
         if st.button("Generate summary from live board", type="primary"):
             st.session_state.pop("summary_error", None)
-            ideas = data.get("ideas") or store.ensure_ideas(session_code, SEED_VOTE_IDEAS)["ideas"]
-            board_data = build_board_data(
-                data["roster"], data["notes"], data["map"], ideas, data["votes"], data["pulse"]
-            )
+            data["ideas"] = data.get("ideas") or store.ensure_ideas(session_code, SEED_BOTTLENECKS)["ideas"]
+            board_data = build_board_data(data)
             placeholder = st.empty()
             accumulated = ""
             try:
@@ -507,7 +515,7 @@ def render_nav():
         st.session_state.active_screen = "join"
 
     row1 = st.columns(3)
-    row2 = st.columns(3)
+    row2 = st.columns(2)
     for col, key in zip(row1 + row2, TAB_KEYS):
         active = st.session_state.active_screen == key
         if col.button(TAB_LABELS[key], key=f"nav_{key}", type="primary" if active else "secondary", use_container_width=True):
@@ -538,12 +546,10 @@ def main():
 
     session_code = store.normalize_code(session_param)
 
-    # Device identity lives in a browser cookie, not the URL. A cookie
-    # persists across refreshes but is scoped to that one browser, so
-    # (unlike a ?u=... query param) it can never ride along when a join
-    # link gets copied or forwarded after someone has already joined —
-    # that was the earlier bug where names prefilled wrong and votes/
-    # pulse answers collided across participants.
+    # Device identity lives in a browser cookie, not the URL — a cookie
+    # persists across refreshes but is scoped to that one browser, so it
+    # can never ride along when a join link gets copied or forwarded
+    # after someone has already joined.
     cookie_device_id = cookies.get("workshop_device_id")
     if cookie_device_id:
         device_id = cookie_device_id
@@ -556,14 +562,13 @@ def main():
             cookies.set("workshop_device_id", device_id, max_age=60 * 60 * 24 * 30)
 
     # Facilitator status is also a cookie (set via password login), never
-    # a URL flag — a "?admin=1" flag is guessable/typeable by anyone, and
-    # unlike a cookie it would ride along on a copied/forwarded link too.
+    # a URL flag.
     is_facilitator = cookies.get("workshop_facilitator") == "1"
 
     st_autorefresh(interval=4000, key="board_autorefresh")
 
     st.markdown('<div class="board-eyebrow">Live Session Board</div>', unsafe_allow_html=True)
-    st.markdown('<div class="board-title">Field Notes: AI Optimization Workshop</div>', unsafe_allow_html=True)
+    st.markdown('<div class="board-title">Field Notes: AI Working Session</div>', unsafe_allow_html=True)
 
     data = store.load(session_code)
 
@@ -587,15 +592,13 @@ def main():
     if screen == "join":
         render_join(session_code, device_id, data)
     elif screen == "notes":
-        render_notes(session_code, data)
+        render_notes(session_code, device_id, data)
     elif screen == "map":
-        render_map(session_code, data)
-    elif screen == "vote":
-        render_vote(session_code, device_id, data)
-    elif screen == "pulse":
-        render_pulse(session_code, device_id, data)
-    elif screen == "summary":
-        render_summary(session_code, is_facilitator, data)
+        render_map(session_code, device_id, data)
+    elif screen == "ideas":
+        render_ideas(session_code, device_id, data)
+    elif screen == "closing":
+        render_closing(session_code, device_id, data, is_facilitator)
 
 
 if __name__ == "__main__":

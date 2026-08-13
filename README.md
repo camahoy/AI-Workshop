@@ -1,41 +1,56 @@
-# Field Notes: AI Optimization Workshop — Live Board
+# Field Notes: AI Working Session — Live Board
 
-A live, cross-level workshop tool built with Streamlit. Participants join
-on their phones, post to a shared research wall, map tasks on an agency
-grid, dot-vote on ideas, and answer an anonymous closing pulse — all
-updating live across devices. The facilitator can trigger a Claude-generated
-closing synthesis that streams onto a shared screen.
+A live, cross-level, cross-division working-session tool built with
+Streamlit. Participants join on their phones under a service line and
+title — never a name — post to a shared research wall, place tasks on a
+meaning/delegation map, surface bottlenecks, and submit closing asks, all
+updating live across devices, all agree-able rather than voted on. The
+facilitator can trigger a Claude-generated closing synthesis that streams
+onto a shared screen.
+
+## Identity model
+
+No name is ever collected. Joining asks only for **Service Line /
+Division** (free text), **Title** (free text), and **Level** (used only to
+balance breakout groups — never shown on posts). Every post anywhere in
+the app is tagged `{Service Line} · {Title}`, never a name or device id.
+Individual per-person tracking (who already agreed with what, who already
+joined) is stored privately per device; only aggregate counts are shared.
 
 ## Screens
 
-1. **Join & Groups** — name + level (8 distinct levels), live roster, mixed-level
-   breakout groups. Joining auto-advances straight to the next screen.
-2. **Good Research** — anonymous sticky-note wall
-3. **Agency Map** — a true scatter plot (not quadrant buttons): click the exact
-   spot on the grid, name the task, it lands at that precise x/y, color-coded
-   by quadrant, live for everyone
-4. **Dot Vote** — 8 pre-seeded ideas plus participant-submitted ideas; one vote
-   per idea per person, no cap on how many different ideas someone can vote for
-5. **Closing Pulse** — four anonymous questions: two yes/somewhat/no, a 1–5
-   ease-of-integration slider with a live room average, and a trust question
-6. **Summary** — facilitator-triggered, streamed synthesis from Claude
+1. **Join & Groups** — Service Line, Title, Level. Joining auto-advances to
+   the next screen. Mixed-level breakout groups, bucketed by level and
+   round-robined across tables.
+2. **Good Research** — one fixed prompt, sticky-note wall, tagged posts,
+   each with an Agree toggle and live count (one agree per person per
+   note — a shared-sentiment signal, not a ranking).
+3. **Meaning & Delegation Map** — a true scatter plot (x = non-delegable →
+   delegable, y = meaningful → meaningless): click the exact spot to name
+   a task, plus a 17-item task bank of chips that prefill the note field.
+   Placed tasks are color-coded by quadrant and agree-able.
+4. **Bottleneck Bank** — 8 seeded starter bottlenecks plus unlimited
+   participant-submitted ones, each agree-able (no vote budget, no cap).
+5. **Closing** — a "what should leadership fund" wall (same agree
+   mechanic), plus a facilitator-only streamed Claude synthesis of the
+   entire board for projecting as the session's closing moment.
 
 A "last updated Xs ago" indicator in the header reflects the most recent
-activity across any screen in the session.
+activity across the whole session.
 
 ## How sessions work
 
 Data is namespaced by a session code passed as `?session=CODE` in the URL.
-Multiple concurrent workshops (different cities/cohorts) never see each
+Multiple concurrent sessions (different cities/cohorts) never see each
 other's data.
 
 - **Facilitator**: open the app's base URL with no `?session=` param. You'll
   land on a setup screen to create a session code (e.g. `SF-01`) — if
   `FACILITATOR_PASSWORD` is set in secrets, you'll need it here. Starting a
   session unlocks a sidebar with the join link/QR code, group-size control,
-  and a reset-board control (which clears everything, including dot votes,
-  back to a fresh state). Facilitator status is stored as a browser cookie,
-  so it survives refreshes on that device.
+  and a reset-board control (clears everything back to a fresh state).
+  Facilitator status is stored as a browser cookie, so it survives
+  refreshes on that device.
 - **Co-facilitators / a different device**: on any screen inside a session,
   open "🔒 Facilitator login" (bottom of the sidebar) and enter the
   password to unlock the same controls on that browser too.
@@ -73,7 +88,7 @@ streamlit run app.py
    field in the facilitator sidebar; you can also paste the URL in manually
    after deploying, once you know it.
 
-   If the closing summary ever fails, the error shown in the Summary tab
+   If the closing summary ever fails, the error shown in the Closing tab
    will say why (most commonly: `ANTHROPIC_API_KEY` missing or invalid) —
    check that secret first.
 
@@ -86,15 +101,13 @@ streamlit run app.py
 - Board data is stored as JSON files under `data/`, one per session code.
   This is fine for Streamlit Community Cloud's single-process deployment,
   but data does **not** survive a redeploy or app restart — that's expected
-  for a tool meant to be reset between workshops.
-- Anonymous by design: notes, agency-map entries, votes, and pulse answers
-  are never linked to a name — only the roster/grouping step is.
+  for a tool meant to be reset between sessions.
+- Anonymous by design: no name is ever collected, only Service Line, Title,
+  and Level. Posts are tagged with Service Line · Title; individual
+  agree/join tracking is private per device, only aggregate counts are
+  shared.
 - The `ANTHROPIC_API_KEY` is read server-side via `st.secrets` and is never
   sent to the browser.
-- Each device's identity (used to cap votes/pulse answers to one each) lives
-  in a browser cookie (`workshop_device_id`, ~30 day expiry) rather than the
-  URL. A cookie survives page refreshes but is scoped to that one browser —
-  unlike a `?u=...` query param, it can never ride along when a join link
-  gets copied or forwarded after someone has already joined (e.g. sharing
-  an address bar instead of the facilitator's clean QR link), so identities
-  can't collide across participants the way they could with a URL-based id.
+- Each device's identity (used to cap one agree per person per item) lives
+  in a browser cookie (`workshop_device_id`, ~30 day expiry) rather than
+  the URL, so it can't leak between devices via a copied/forwarded link.
