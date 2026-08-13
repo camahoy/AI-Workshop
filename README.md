@@ -3,37 +3,44 @@
 A live, cross-level, cross-division working-session tool built with
 Streamlit. Participants join on their phones under a service line and
 title — never a name — post to a shared research wall, place tasks on a
-meaning/delegation map, surface bottlenecks, and submit closing asks, all
-updating live across devices, all agree-able rather than voted on. The
-facilitator can trigger a Claude-generated closing synthesis that streams
-onto a shared screen.
+meaning/delegation map, and surface bottlenecks, all updating live across
+devices, all agree-able rather than voted on. The facilitator can trigger
+a Claude-generated closing synthesis that streams onto a shared screen.
 
 ## Identity model
 
 No name is ever collected. Joining asks only for **Service Line /
-Division** (free text), **Title** (free text), and **Level** (used only to
-balance breakout groups — never shown on posts). Every post anywhere in
-the app is tagged `{Service Line} · {Title}`, never a name or device id.
-Individual per-person tracking (who already agreed with what, who already
-joined) is stored privately per device; only aggregate counts are shared.
+Division** (free text), **Title** (free text), and **Level** (used only
+for segmentation/reporting — never shown on posts, and never used to form
+groups; there are no breakout groups). Every post anywhere in the app is
+tagged `{Service Line} · {Title}`, never a name or device id. Individual
+per-person tracking (who already agreed with what, who already joined) is
+stored privately per device; only aggregate counts are shared.
 
 ## Screens
 
-1. **Join & Groups** — Service Line, Title, Level. Joining auto-advances to
-   the next screen. Mixed-level breakout groups, bucketed by level and
-   round-robined across tables.
+1. **Join** — Service Line, Title, Level. Joining auto-advances to the next
+   screen. A facilitator-only "Reset board" control sits at the bottom:
+   click once to arm it, then click again within 5 seconds to confirm —
+   otherwise it auto-disarms. Confirming clears all posts, agree counts,
+   and the roster for this session only.
 2. **Good Research** — one fixed prompt, sticky-note wall, tagged posts,
    each with an Agree toggle and live count (one agree per person per
    note — a shared-sentiment signal, not a ranking).
 3. **Meaning & Delegation Map** — a true scatter plot (x = non-delegable →
-   delegable, y = meaningful → meaningless): click the exact spot to name
-   a task, plus a 17-item task bank of chips that prefill the note field.
-   Placed tasks are color-coded by quadrant and agree-able.
-4. **Bottleneck Bank** — 8 seeded starter bottlenecks plus unlimited
-   participant-submitted ones, each agree-able (no vote budget, no cap).
-5. **Closing** — a "what should leadership fund" wall (same agree
-   mechanic), plus a facilitator-only streamed Claude synthesis of the
-   entire board for projecting as the session's closing moment.
+   delegable, y = not meaningful → meaningful): click the exact spot to
+   name a task, plus a 17-item task bank of chips that prefill the note
+   field. Placed tasks are color-coded by quadrant and agree-able.
+4. **Bottleneck Bank** — starts completely empty ("No bottlenecks posted
+   yet, be the first."), fills with unlimited participant-submitted ones,
+   each agree-able (no vote budget, no cap).
+5. **N = Everyone** — a read-only reference copy of the draft AI
+   Perceptions & Workflow Assessment questionnaire (`questionnaire/`), a
+   longer instrument meant to be separately fielded, shown here so the room
+   can see what the full-population survey will ask.
+6. **Closing** — only a facilitator-only streamed Claude synthesis of the
+   entire board, for projecting as the session's closing moment. No
+   participant composer on this screen.
 
 A "last updated Xs ago" indicator in the header reflects the most recent
 activity across the whole session.
@@ -47,10 +54,10 @@ other's data.
 - **Facilitator**: open the app's base URL with no `?session=` param. You'll
   land on a setup screen to create a session code (e.g. `SF-01`) — if
   `FACILITATOR_PASSWORD` is set in secrets, you'll need it here. Starting a
-  session unlocks a sidebar with the join link/QR code, group-size control,
-  and a reset-board control (clears everything back to a fresh state).
-  Facilitator status is stored as a browser cookie, so it survives
-  refreshes on that device.
+  session unlocks a sidebar with the join link/QR code, plus a "Reset board"
+  control at the bottom of the Join screen (arm with one click, confirm with
+  a second click within 5 seconds, or it auto-disarms). Facilitator status is
+  stored as a browser cookie, so it survives refreshes on that device.
 - **Co-facilitators / a different device**: on any screen inside a session,
   open "🔒 Facilitator login" (bottom of the sidebar) and enter the
   password to unlock the same controls on that browser too.

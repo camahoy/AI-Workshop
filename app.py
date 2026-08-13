@@ -8,7 +8,7 @@ persisted as a browser cookie — not a URL flag.
 Identity model: no names are ever collected. Joining asks for Service
 Line, Title, and Level; every post anywhere in the app is tagged
 "{Service Line} · {Title}", never a name or device id. Level is used
-only to balance breakout groups.
+only for segmentation/reporting, not for breakout groups — there are none.
 """
 import html
 import time
@@ -20,18 +20,21 @@ from streamlit_autorefresh import st_autorefresh
 from streamlit_cookies_controller import CookieController
 from io import BytesIO
 
-from lib import store, groups as groupslib
+from lib import questionnaire, store
 from lib.board_map import QUAD_LABELS, build_map_figure, quad_of
-from lib.claude_summary import SEED_BOTTLENECKS, TASK_BANK, build_board_data, stream_summary
+from lib.claude_summary import TASK_BANK, build_board_data, stream_summary
 
 LEVELS = ["Analyst", "Manager", "Director", "Client Officer", "VP", "SVP", "President", "CEO"]
 
-TAB_KEYS = ["join", "notes", "map", "ideas", "closing"]
+RESET_CONFIRM_WINDOW = 5  # seconds to confirm a reset before it auto-disarms
+
+TAB_KEYS = ["join", "notes", "map", "ideas", "everyone", "closing"]
 TAB_LABELS = {
-    "join": "Join & Groups",
+    "join": "Join",
     "notes": "Good Research",
     "map": "Meaning & Delegation",
     "ideas": "Bottleneck Bank",
+    "everyone": "N = Everyone",
     "closing": "Closing",
 }
 
@@ -65,10 +68,6 @@ html, body, [class*="css"] { font-family: 'Courier New', ui-monospace, monospace
 .note.q-br { border-left: 4px solid #a8532f; }
 .roster-chip { display: inline-block; background: var(--card); border: 1px solid var(--ink); border-radius: 12px; padding: 4px 11px; font-size: 11px; margin: 2px 4px 2px 0; color: var(--ink); }
 .roster-chip .lvl { color: var(--rust); font-weight: 700; }
-.group-card { border: 1.5px solid var(--ink); background: var(--card); border-radius: 5px; padding: 12px 14px; margin-bottom: 10px; }
-.group-card h4 { margin: 0 0 6px; font-family: Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 5px; color: var(--ink); }
-.group-member { font-size: 12px; padding: 2px 0; color: var(--ink); }
-.group-member .lvl { color: var(--rust); font-size: 10px; text-transform: uppercase; }
 .empty-note { color: var(--pencil); font-style: italic; font-size: 13px; }
 .summary-output { border: 2px solid var(--ink); background: var(--card); border-radius: 6px; padding: 18px; font-family: Georgia, serif; font-size: 14.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; }
 div[data-testid="stButton"] button[kind="primary"] { background-color: var(--mustard); border-color: var(--ink); color: var(--ink); }
@@ -147,29 +146,6 @@ def render_facilitator_sidebar(session_code, data, cookies):
         st.sidebar.info("Paste your deployed app URL above to generate the QR code and join link.")
 
     st.sidebar.divider()
-    st.sidebar.markdown("**Groups**")
-    group_size = st.sidebar.number_input(
-        "People per table", min_value=3, max_value=8, value=int(data.get("group_size", 5))
-    )
-    if st.sidebar.button("Generate mixed-level groups"):
-        roster = data.get("roster", [])
-        new_groups = groupslib.generate_groups(roster, group_size)
-
-        def mutate(d):
-            d["groups"] = new_groups
-            d["group_size"] = group_size
-
-        store.update(session_code, mutate)
-        st.rerun()
-
-    st.sidebar.divider()
-    st.sidebar.markdown("**Reset**")
-    confirm = st.sidebar.checkbox("Yes, clear all data for this session")
-    if st.sidebar.button("Reset board", disabled=not confirm):
-        store.reset(session_code)
-        st.rerun()
-
-    st.sidebar.divider()
     if st.sidebar.button("End session / start a new one"):
         st.query_params.clear()
         st.rerun()
@@ -223,7 +199,7 @@ def render_agree_item(session_code, device_id, data, collection, item, tag_label
 
 
 # ------------------------------------------------------------------ join --
-def render_join(session_code, device_id, data):
+def render_join(session_code, device_id, data, is_facilitator):
     st.markdown(
         '<div class="prompt-box"><div class="label">Step 1</div>'
         "<p>No name is collected. Everything you post is shown under your service line and title, not your name.</p></div>",
@@ -235,7 +211,7 @@ def render_join(session_code, device_id, data):
     with st.form("join_form", clear_on_submit=True):
         service_line = st.text_input("Service Line / Division", value="", placeholder="e.g. Data Processing, AM, Stats, Client Service")
         title = st.text_input("Title", value="", placeholder="e.g. Senior Research Analyst")
-        level = st.selectbox("Level (used only to mix breakout groups)", LEVELS, index=0)
+        level = st.selectbox("Level (used only for segmentation/reporting)", LEVELS, index=0)
         submitted = st.form_submit_button("Join the room", type="primary")
 
     if submitted and service_line.strip():
@@ -265,7 +241,7 @@ def render_join(session_code, device_id, data):
 
     st.markdown(
         '<div class="prompt-box" style="margin-top:20px;"><div class="label">Who\'s here</div>'
-        "<p style=\"font-size:13px;\">Everyone who's joined so far, shown by service line, title, and level. This feeds the breakout groups.</p></div>",
+        "<p style=\"font-size:13px;\">Everyone who's joined so far, shown by service line, title, and level.</p></div>",
         unsafe_allow_html=True,
     )
     roster = data["roster"]
@@ -278,20 +254,26 @@ def render_join(session_code, device_id, data):
     else:
         st.markdown('<div class="empty-note">No one has joined yet.</div>', unsafe_allow_html=True)
 
-    groups = data.get("groups")
-    if groups:
-        st.markdown("<br>", unsafe_allow_html=True)
-        cols = st.columns(2)
-        for i, g in enumerate(groups):
-            members = "".join(
-                f'<div class="group-member">{esc(p["service_line"])} <span class="lvl">{esc(p["title"] or "")} · {esc(p["level"])}</span></div>'
-                for p in g
-            )
-            with cols[i % 2]:
-                st.markdown(
-                    f'<div class="group-card"><h4>Table {i + 1}</h4>{members}</div>',
-                    unsafe_allow_html=True,
-                )
+    if is_facilitator:
+        st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown('<div class="board-eyebrow">Facilitator only</div>', unsafe_allow_html=True)
+        now = time.time()
+        armed_at = st.session_state.get("reset_armed_at")
+        armed = armed_at is not None and (now - armed_at) < RESET_CONFIRM_WINDOW
+        if armed:
+            remaining = max(0, RESET_CONFIRM_WINDOW - (now - armed_at))
+            if st.button(f"⚠️ Click again to confirm reset ({remaining:.0f}s)", key="reset_confirm_btn", type="primary"):
+                store.reset(session_code)
+                st.session_state.pop("reset_armed_at", None)
+                st.rerun()
+            st.caption("This clears all posts, agree counts, and the roster for this session only. Other sessions are untouched.")
+        else:
+            if armed_at is not None:
+                st.session_state.pop("reset_armed_at", None)
+            if st.button("Reset board", key="reset_arm_btn"):
+                st.session_state["reset_armed_at"] = now
+                st.rerun()
 
 
 # ----------------------------------------------------------------- notes --
@@ -433,46 +415,24 @@ def render_ideas(session_code, device_id, data):
 
         def mutate(d, t=idea_text.strip(), tag=tag_for(entry)):
             d.setdefault("ideas", [])
-            if not d["ideas"]:
-                d["ideas"] = [{"id": f"seed{i}", "text": s, "tag": None} for i, s in enumerate(SEED_BOTTLENECKS)]
             d["ideas"].append({"id": "u" + uuid.uuid4().hex[:8], "text": t, "tag": tag})
         data = store.update(session_code, mutate)
-    else:
-        data["ideas"] = store.ensure_ideas(session_code, SEED_BOTTLENECKS)["ideas"]
 
-    for idea in data["ideas"]:
-        label = f"Shared by {esc(idea['tag'])}" if idea.get("tag") else "Starter bottleneck"
-        render_agree_item(session_code, device_id, data, "ideas", idea, tag_label=label)
+    ideas = data.get("ideas") or []
+    if ideas:
+        for idea in reversed(ideas):
+            label = f"Shared by {esc(idea['tag'])}" if idea.get("tag") else "Unspecified"
+            render_agree_item(session_code, device_id, data, "ideas", idea, tag_label=label)
+    else:
+        st.markdown('<div class="empty-note">No bottlenecks posted yet, be the first.</div>', unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------- closing --
 def render_closing(session_code, device_id, data, is_facilitator):
     st.markdown(
-        '<div class="prompt-box"><div class="label">Prompt</div>'
-        "<p>If leadership funded one thing coming out of today, what should it be? Short and specific.</p></div>",
-        unsafe_allow_html=True,
-    )
-    with st.form("onething_form", clear_on_submit=True):
-        text = st.text_area("Your ask", label_visibility="collapsed", placeholder="One concrete thing, in your own words…", height=80)
-        submitted = st.form_submit_button("Post", type="primary")
-    if submitted and text.strip():
-        entry = my_roster_entry(data, device_id)
-
-        def mutate(d, t=text.strip(), tag=tag_for(entry)):
-            d["onething"].append({"id": "o" + uuid.uuid4().hex[:8], "text": t, "tag": tag})
-        data = store.update(session_code, mutate)
-
-    onething = data["onething"]
-    if onething:
-        for n in reversed(onething):
-            render_agree_item(session_code, device_id, data, "onething", n)
-    else:
-        st.markdown('<div class="empty-note">No submissions yet.</div>', unsafe_allow_html=True)
-
-    st.markdown(
-        '<div class="prompt-box" style="margin-top:24px;"><div class="label">For facilitators</div>'
-        "<p>Pull everything the room posted into one synthesis for leadership, grounded in what was actually "
-        "said, not general AI strategy talk.</p></div>",
+        '<div class="prompt-box"><div class="label">Closing</div>'
+        "<p>This pulls everything the room posted into one synthesis for leadership, grounded in what was "
+        "actually said. Best run live, projected on a shared screen, as the closing moment of the session.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -484,7 +444,6 @@ def render_closing(session_code, device_id, data, is_facilitator):
 
         if st.button("Generate summary from live board", type="primary"):
             st.session_state.pop("summary_error", None)
-            data["ideas"] = data.get("ideas") or store.ensure_ideas(session_code, SEED_BOTTLENECKS)["ideas"]
             board_data = build_board_data(data)
             placeholder = st.empty()
             accumulated = ""
@@ -509,13 +468,44 @@ def render_closing(session_code, device_id, data, is_facilitator):
         st.markdown('<div class="empty-note">Waiting for your facilitator to generate the closing summary.</div>', unsafe_allow_html=True)
 
 
+# -------------------------------------------------------------- everyone --
+def render_everyone():
+    # Static, developer-authored reference content (not user input) — safe
+    # to hand straight to markdown without HTML-escaping it.
+    st.markdown(
+        f'<div class="prompt-box"><div class="label">{questionnaire.SUBTITLE}</div>'
+        f"<p>{questionnaire.PURPOSE}</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<div class="prompt-sub">{questionnaire.META}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="prompt-box"><div class="label">Shown to respondent</div>'
+        f"<p>{questionnaire.RESPONDENT_INTRO}</p></div>",
+        unsafe_allow_html=True,
+    )
+
+    for section in questionnaire.SECTIONS:
+        with st.expander(section["heading"]):
+            if section.get("note"):
+                st.caption(section["note"])
+            for item in section["items"]:
+                st.markdown(f"- {item}")
+
+    st.markdown(
+        '<div class="prompt-box" style="margin-top:16px;"><div class="label">Closing note to respondent</div>'
+        f"<p>{questionnaire.CLOSING_NOTE}</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.caption("This is a reference copy of the draft questionnaire — a longer, separately-fielded survey, not collected through this board.")
+
+
 # ------------------------------------------------------------------- nav --
 def render_nav():
     if "active_screen" not in st.session_state:
         st.session_state.active_screen = "join"
 
     row1 = st.columns(3)
-    row2 = st.columns(2)
+    row2 = st.columns(3)
     for col, key in zip(row1 + row2, TAB_KEYS):
         active = st.session_state.active_screen == key
         if col.button(TAB_LABELS[key], key=f"nav_{key}", type="primary" if active else "secondary", use_container_width=True):
@@ -590,13 +580,15 @@ def main():
     screen = st.session_state.active_screen
 
     if screen == "join":
-        render_join(session_code, device_id, data)
+        render_join(session_code, device_id, data, is_facilitator)
     elif screen == "notes":
         render_notes(session_code, device_id, data)
     elif screen == "map":
         render_map(session_code, device_id, data)
     elif screen == "ideas":
         render_ideas(session_code, device_id, data)
+    elif screen == "everyone":
+        render_everyone()
     elif screen == "closing":
         render_closing(session_code, device_id, data, is_facilitator)
 

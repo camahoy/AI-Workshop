@@ -19,10 +19,10 @@ _GY = [y for y in _GRID_VALS for _x in _GRID_VALS]
 # y<50 (top) = meaningful, y>=50 (bottom) = meaningless
 QUAD_COLORS = {"tl": "#4f6d5a", "tr": "#c98a2c", "bl": "#6b7270", "br": "#a8532f"}
 QUAD_LABELS = {
-    "tl": "You care about it, AI can't do it",
-    "tr": "You care about it, AI could do it",
-    "bl": "Don't care, and AI can't do it either",
-    "br": "Don't care, and AI could do it",
+    "tl": "Feels meaningful, AI can't do it",
+    "tr": "Feels meaningful, AI could do it",
+    "bl": "Not a source of meaning, and AI can't do it either",
+    "br": "Not a source of meaning, and AI could do it",
 }
 PAPER = "#f6f2e9"
 INK = "#1c2b2d"
@@ -63,10 +63,10 @@ def build_map_figure(notes: list[dict]) -> go.Figure:
         ))
 
     corner_style = dict(showarrow=False, font=dict(size=8.5, color="#6b7270"), opacity=0.8)
-    fig.add_annotation(x=2, y=3, xanchor="left", yanchor="top", text="YOU CARE, AI CAN'T DO IT", **corner_style)
-    fig.add_annotation(x=98, y=3, xanchor="right", yanchor="top", text="YOU CARE, AI COULD DO IT", **corner_style)
-    fig.add_annotation(x=2, y=97, xanchor="left", yanchor="bottom", text="DON'T CARE, AI CAN'T EITHER", **corner_style)
-    fig.add_annotation(x=98, y=97, xanchor="right", yanchor="bottom", text="DON'T CARE, AI COULD DO IT", **corner_style)
+    fig.add_annotation(x=2, y=3, xanchor="left", yanchor="top", text="MEANINGFUL, AI CAN'T DO IT", **corner_style)
+    fig.add_annotation(x=98, y=3, xanchor="right", yanchor="top", text="MEANINGFUL, AI COULD DO IT", **corner_style)
+    fig.add_annotation(x=2, y=97, xanchor="left", yanchor="bottom", text="NOT MEANINGFUL, AI CAN'T EITHER", **corner_style)
+    fig.add_annotation(x=98, y=97, xanchor="right", yanchor="bottom", text="NOT MEANINGFUL, AI COULD DO IT", **corner_style)
 
     fig.add_shape(type="line", x0=50, x1=50, y0=0, y1=100, line=dict(color=LINE, width=2))
     fig.add_shape(type="line", x0=0, x1=100, y0=50, y1=50, line=dict(color=LINE, width=2))
@@ -78,7 +78,7 @@ def build_map_figure(notes: list[dict]) -> go.Figure:
         ),
         yaxis=dict(
             range=[100, 0], showgrid=False, zeroline=False, fixedrange=True,
-            showticklabels=False, title=dict(text="Meaningful ← · · → Meaningless", font=dict(size=11)),
+            showticklabels=False, title=dict(text="← Not meaningful · · · Meaningful →", font=dict(size=11)),
         ),
         height=440,
         margin=dict(l=10, r=10, t=40, b=40),

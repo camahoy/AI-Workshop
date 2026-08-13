@@ -22,7 +22,7 @@ _locks_guard = threading.Lock()
 
 _SAFE_CODE_RE = re.compile(r"[^A-Za-z0-9_-]")
 
-AGREE_COLLECTIONS = ("notes", "map", "ideas", "onething")
+AGREE_COLLECTIONS = ("notes", "map", "ideas")
 
 
 def normalize_code(session_code: str) -> str:
@@ -45,12 +45,9 @@ def _path(session_code: str) -> Path:
 def _default_data() -> dict:
     return {
         "roster": [],          # [{device_id, service_line, title, level}]
-        "groups": None,        # [[person, ...], ...] or None
-        "group_size": 5,
         "notes": [],           # Good Research: [{id, text, tag}]
         "map": [],             # Meaning & Delegation: [{id, text, x, y, tag}]
-        "ideas": None,         # Bottleneck Bank: [{id, text, tag}] tag=None for seeded
-        "onething": [],        # Closing "one thing": [{id, text, tag}]
+        "ideas": [],           # Bottleneck Bank: [{id, text, tag}] — starts empty, no seeding
         "agree_counts": {k: {} for k in AGREE_COLLECTIONS},   # {collection: {item_id: count}}
         "my_agree": {k: {} for k in AGREE_COLLECTIONS},       # {collection: {device_id: {item_id: True}}}
         "summary": None,       # {"text": ..., "generated_at": ...}
@@ -100,20 +97,6 @@ def reset(session_code: str) -> None:
     lock = _lock_for(session_code)
     with lock:
         save(session_code, _default_data())
-
-
-def ensure_ideas(session_code: str, seed_ideas: list[str]) -> dict:
-    """Seed the bottleneck list on first access only. Deliberately bypasses
-    `update()`'s last_updated stamp when nothing actually changed, so idle
-    page loads don't masquerade as room activity."""
-    data = load(session_code)
-    if data.get("ideas"):
-        return data
-
-    def mutate(d):
-        d["ideas"] = [{"id": f"seed{i}", "text": t, "tag": None} for i, t in enumerate(seed_ideas)]
-
-    return update(session_code, mutate)
 
 
 def toggle_agree(d: dict, collection: str, item_id: str, device_id: str) -> None:
