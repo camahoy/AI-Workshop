@@ -14,10 +14,10 @@ PURPOSE = (
 )
 META = "Estimated length: 12–15 minutes · self-administered online · anonymous · service line and title captured for segmentation only."
 RESPONDENT_INTRO = (
-    "This survey asks about how you currently use AI tools in your work, what's working "
-    "and what isn't, and where you'd want AI to show up differently. Your individual "
-    "answers are not shared with your manager. Results are reported by service line and "
-    "level, not by name. It should take about 12 to 15 minutes."
+    "This is part of an ongoing effort to track how AI is actually showing up in "
+    "people's work, so we can build on it over time rather than guess. Your honest "
+    "answer today becomes part of that baseline. Results are reported by service line "
+    "and title, not by name. It should take about 12 to 15 minutes."
 )
 CLOSING_NOTE = (
     "Thank you for your time. Results will be shared in aggregate, and specific themes "
@@ -30,7 +30,7 @@ SECTIONS = [
         "note": "Used for segmentation only. Not used to identify individual respondents in reporting.",
         "items": [
             "A1. Which service line or division do you primarily work in?",
-            "A2. What is your title or level?",
+            "A2. What is your title?",
             "A3. How long have you worked at the company? (Less than 1 year / 1 to 3 years / 4 to 7 years / 8+ years)",
             "A4. Which region or market do you primarily support?",
         ],
@@ -39,7 +39,7 @@ SECTIONS = [
         "heading": "Section B. Current AI Usage (behavioral)",
         "note": "Behavioral questions are asked before attitudinal questions, to anchor respondents in what they actually do, not what they think they should say.",
         "items": [
-            "B1. Which of the following AI tools do you currently use for work, even occasionally? Select all that apply — company-provided Copilot, a personal ChatGPT/Claude/similar account used for work, an internal tool or agent built by your division, a third-party research platform with AI features, something else, or none of the above.",
+            "B1. Which of the following AI tools do you currently use for work, even occasionally? Select all that apply — company-provided Copilot, a personal ChatGPT/Claude/Gemini/similar account used for work, an internal tool or agent built by your division, a third-party research platform with AI features, something else, or none of the above.",
             "B2. For each tool selected above, how often do you use it? (Daily / a few times a week / a few times a month / rarely)",
             "B3. Have you personally built, configured, or requested a custom AI tool, script, or agent for your own work or your team's use, beyond using an off-the-shelf tool as provided? (Yes / No)",
             "B3a. If yes — briefly describe what you built or requested.",
@@ -53,14 +53,15 @@ SECTIONS = [
         "items": [
             "C1. For each tool you currently use, how effective is it for your work? (1 = not at all effective, 5 = extremely effective)",
             "C2. What's the single biggest limitation of the AI tool or tools you currently use?",
-            "C3. Overall, how would you rate the AI tools currently available to you, specifically for the kind of work you do? (1 = poor, does not fit how I actually work, 7 = excellent, well suited to my work)",
+            "C3. Overall, how would you rate the AI tools currently available to you, specifically for the kind of work you do? (1 = poor, does not fit how I actually work, 5 = excellent, well suited to my work)",
         ],
     },
     {
         "heading": "Section D. Workflow and Task-Level Assessment",
-        "note": "Identifies where AI could realistically take on parts of the respondent's actual workflow, task by task, rather than asking about AI in the abstract.",
+        "note": "Identifies where AI could realistically take on parts of the respondent's actual workflow, task by task, rather than asking about AI in the abstract. Split into two steps to keep the grid short and reduce straightlining.",
         "items": [
-            "D1. Think about a typical week in your role. For each task type: do you spend meaningful time on it, could AI take it on (fully / AI drafts, I finish / not really), and how meaningful is this task to you personally? (1–5)",
+            "D1. Which of the following do you spend meaningful time on in a typical week? Select all that apply. (from the task bank — a filter question, not scored, it determines which rows appear in D1a)",
+            "D1a. For each task you selected above, could AI take it on (fully / AI drafts, I finish / not really), and how meaningful is it to you personally? (1–5, capped at 8 rows)",
             "D2. If you had a magic wand and could hand off any part of your workflow to AI tomorrow, with no limitations, what would it be, and why that specifically?",
             "D3. Is there a part of your workflow where you would NOT want AI involved, even if it were technically capable of doing it? What is it, and why?",
         ],
@@ -68,9 +69,9 @@ SECTIONS = [
     {
         "heading": "Section E. Trust and Readiness",
         "items": [
-            "E1. How confident are you that AI-assisted output (drafts, summaries, tables) is accurate enough to use with only light review? (1 = not at all confident, 7 = extremely confident)",
-            "E2. How much do you trust AI-assisted research findings compared to fully human-led research? (1 = not nearly as much, 7 = just as much)",
-            "E3. How easy or hard is it currently to integrate AI into your day-to-day workflow? (1 = very hard, 7 = very easy)",
+            "E1. How confident are you that AI-assisted output (drafts, summaries, tables) is accurate enough to use with only light review? (1 = not at all confident, 5 = extremely confident)",
+            "E2. How much do you trust AI-assisted research findings compared to fully human-led research? (1 = not nearly as much, 5 = just as much)",
+            "E3. How easy or hard is it currently to integrate AI into your day-to-day workflow? (1 = very hard, 5 = very easy)",
             "E4. Which best describes how you'd like AI to show up in your role going forward? (want to use it more / using it about the right amount / being asked to use it more than comfortable with / don't think it belongs in my role / not sure)",
             "E5. What would need to be true for you to trust AI more in your work?",
         ],
@@ -78,10 +79,10 @@ SECTIONS = [
     {
         "heading": "Section F. Organizational Voice and Priorities",
         "items": [
-            "F1. Do you feel you have a say in how AI tools are selected and rolled out for your team? (1 = no say at all, 7 = full say)",
-            "F2. Do you feel the AI tools currently provided are actually built for how your division works day to day? (1 = not at all, 7 = completely)",
+            "F1. Do you feel you have a say in how AI tools are selected and rolled out for your team? (1 = no say at all, 5 = full say)",
+            "F2. Do you feel the AI tools currently provided are actually built for how your division works day to day? (1 = not at all, 5 = completely)",
             "F3. What's one thing leadership could fund or build that would make the biggest difference to your day-to-day work? (a direct input to roadmap prioritization)",
-            "F4. If the company could only prioritize ONE of the following for AI investment over the next year, which should it be? Rank your top 3 — tools that make existing work faster, tools that improve quality/accuracy, client-facing AI capabilities, training and skill-building, governance/data security/clear rules, or none of these should be the priority right now.",
+            "F4. Investment priority exercise — a MaxDiff, not a static ranked list. Each respondent sees several small sets drawn from five priorities (tools that make existing work faster, tools that improve quality/accuracy, client-facing AI capabilities, training and skill-building, governance/data security/clear rules, plus \"none of these\"), and picks the most and least important in each set — forcing real trade-offs instead of rating everything highly.",
         ],
     },
     {
