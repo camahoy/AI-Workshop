@@ -48,7 +48,6 @@ def _default_data() -> dict:
         "notes": [],           # Good Research: [{id, text, tag}]
         "map": [],             # Meaning & Delegation: [{id, text, x, y, tag}]
         "ideas": [],           # Bottleneck Bank: [{id, text, tag}] — starts empty, no seeding
-        "survey_responses": {},  # N = Everyone: {device_id: {...answers...}}, aggregate-only display
         "agree_counts": {k: {} for k in AGREE_COLLECTIONS},   # {collection: {item_id: count}}
         "my_agree": {k: {} for k in AGREE_COLLECTIONS},       # {collection: {device_id: {item_id: True}}}
         "summary": None,       # {"text": ..., "generated_at": ...}

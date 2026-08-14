@@ -1,5 +1,7 @@
 .streamlit/secrets.toml
 data/*.json
+data/survey_responses.db
+data/survey_responses.db-*
 __pycache__/
 *.pyc
 .DS_Store
