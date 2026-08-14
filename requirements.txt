@@ -4,3 +4,4 @@ streamlit-autorefresh>=1.0.1
 qrcode[pil]>=7.4
 plotly>=5.22
 streamlit-cookies-controller>=0.0.4
+requests>=2.31

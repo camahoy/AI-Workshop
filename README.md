@@ -196,6 +196,7 @@ never gets committed.
    FACILITATOR_PASSWORD = "choose-a-password"
    SURVEY_RESULTS_PASSWORD = "choose-a-different-password"
    APP_BASE_URL = "https://your-app-name.streamlit.app"
+   SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/XXXXXXXX/exec"
    ```
 
    `FACILITATOR_PASSWORD` is strongly recommended — without it, anyone who
@@ -203,19 +204,74 @@ never gets committed.
    controls. `SURVEY_RESULTS_PASSWORD` is equally recommended — without it,
    anyone with the results page's URL can read every open-ended response.
    `APP_BASE_URL` is optional — it just prefills the QR/join-link field in
-   the facilitator sidebar.
+   the facilitator sidebar. `SHEETS_WEBHOOK_URL` is strongly recommended
+   before fielding the survey at any real scale — see below.
 
    If either closing/results synthesis ever fails, the error shown in the
    UI will say why (most commonly: `ANTHROPIC_API_KEY` missing or invalid).
 
 4. Deploy. The live board is stateless/file-backed and fine to let sleep
-   between sessions. The survey's SQLite file persists on the same disk —
-   fine for Streamlit Community Cloud's single-process deployment, but
-   note that Streamlit Cloud's disk is **not guaranteed to survive a
-   redeploy**; if you need the survey data to survive a redeploy mid-field-
-   window, export it (`lib/survey_db.all_responses()`) before redeploying,
-   or point `lib/survey_db.DB_PATH` at a mounted persistent volume if your
-   hosting target provides one.
+   between sessions. **Streamlit Community Cloud's local disk is not
+   guaranteed to survive a redeploy, reboot, or sleep/wake cycle** — this
+   is a platform characteristic, not a bug, but it means both the live
+   board's JSON files and the survey's SQLite file can be lost by an app
+   restart with no warning. For the live board this is an acceptable
+   trade (it's meant to reset between sessions anyway). For the survey —
+   meant to run unattended for ~2 weeks — it's not, so treat
+   `SHEETS_WEBHOOK_URL` below as required, not optional, before sending
+   the survey link to anyone.
+
+### Backing up survey responses to Google Sheets (`SHEETS_WEBHOOK_URL`)
+
+Every N = Everyone submission is also POSTed to this URL if it's set
+(`lib/sheets_backup.py`) — a redundant copy that lives on Google's
+infrastructure, completely independent of this app's container. It's
+best-effort and non-blocking: if the webhook is unset, slow, or down, the
+submission still saves normally to SQLite; the respondent just doesn't
+see the "backed up" confirmation.
+
+Setup (about 3 minutes, no Google Cloud project or service account
+needed):
+
+1. Create a new Google Sheet (sheets.new).
+2. **Extensions → Apps Script**, replace the placeholder with:
+
+   ```javascript
+   function doPost(e) {
+     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+     var payload = JSON.parse(e.postData.contents);
+
+     var flat = {};
+     for (var key in payload) {
+       var val = payload[key];
+       flat[key] = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+     }
+     flat['_received_at'] = new Date().toISOString();
+
+     var headerRow = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+     var headers = headerRow.filter(function(h) { return h !== ""; });
+
+     for (var k in flat) {
+       if (headers.indexOf(k) === -1) {
+         headers.push(k);
+         sheet.getRange(1, headers.length).setValue(k);
+       }
+     }
+
+     var row = headers.map(function(h) { return (h in flat) ? flat[h] : ""; });
+     sheet.appendRow(row);
+
+     return ContentService.createTextOutput(JSON.stringify({status: "ok"})).setMimeType(ContentService.MimeType.JSON);
+   }
+   ```
+
+   This dynamically adds a column for any new field it sees, so it
+   doesn't need updating if the survey's questions change later.
+
+3. **Deploy → New deployment → type "Web app"**. Set **Execute as: Me**,
+   **Who has access: Anyone**. Deploy, authorize with your Google account,
+   copy the resulting URL (ends in `/exec`).
+4. Paste that URL into Streamlit secrets as `SHEETS_WEBHOOK_URL`.
 
 ## Data & storage notes
 
@@ -223,8 +279,10 @@ never gets committed.
 - Board data is stored as JSON files under `data/`, one per session code —
   ephemeral by design, fine to lose on redeploy.
 - Survey responses are stored in `data/survey_responses.db` (SQLite, WAL
-  mode) — meant to persist through a full field window, gitignored like
-  the rest of `data/`.
+  mode), gitignored like the rest of `data/`, **and** POSTed to
+  `SHEETS_WEBHOOK_URL` if configured (see "Backing up survey responses to
+  Google Sheets" above) — the webhook copy is the one actually meant to
+  survive the full field window, since the local disk isn't guaranteed to.
 - Anonymous by design: no name is ever collected anywhere in either part.
   The live board tags posts with Service Line · Title; the survey is
   stricter still — individual responses are never displayed anywhere in

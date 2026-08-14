@@ -12,7 +12,7 @@ import time
 
 import streamlit as st
 
-from lib import survey, survey_db, theme
+from lib import sheets_backup, survey, survey_db, theme
 
 st.set_page_config(page_title="N = Everyone — Survey", page_icon="📝", layout="centered")
 theme.inject()
@@ -298,6 +298,12 @@ def main():
             "title, never by name.</p></div>",
             unsafe_allow_html=True,
         )
+        backup_ok = st.session_state.get("survey_backup_ok")
+        backup_msg = st.session_state.get("survey_backup_msg")
+        if backup_ok:
+            st.caption("✓ Backed up to the durable spreadsheet.")
+        elif backup_msg:
+            st.caption(f"⚠️ Saved to the app, but the spreadsheet backup didn't confirm ({backup_msg}). Your answer is still recorded.")
         st.caption("You can close this tab. Reload the page if you need to submit a separate response.")
         return
 
@@ -363,10 +369,21 @@ def main():
                 draft.pop("f4_item_sets", None)
                 straightlining = survey.is_straightlining(draft.get("d1a"))
                 ttc = (time.time() - start_ts) if start_ts else None
-                survey_db.insert_response(draft, ttc, straightlining)
+                response_id = survey_db.insert_response(draft, ttc, straightlining)
+
+                backup_payload = dict(draft)
+                backup_payload.update(
+                    _response_id=response_id,
+                    _time_to_complete_seconds=ttc,
+                    _straightlining=straightlining,
+                )
+                backup_ok, backup_msg = sheets_backup.send(backup_payload)
+
                 st.session_state.pop("survey_step", None)
                 st.session_state.pop("survey_draft", None)
                 st.session_state["survey_app_submitted"] = True
+                st.session_state["survey_backup_ok"] = backup_ok
+                st.session_state["survey_backup_msg"] = backup_msg
                 st.rerun()
 
 
