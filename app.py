@@ -28,6 +28,19 @@ LEVELS = ["Analyst", "Manager", "Director", "Client Officer", "VP", "SVP", "Pres
 
 RESET_CONFIRM_WINDOW = 5  # seconds to confirm a reset before it auto-disarms
 
+
+def safe_cookie_get(cookies, key):
+    """streamlit_cookies_controller's .get() can raise
+    `TypeError: argument of type 'NoneType' is not a container or iterable`
+    when the underlying cookie dict hasn't round-tripped from the browser
+    yet (seen intermittently in production logs) — treat that the same as
+    "not available on this rerun" rather than crashing the whole page."""
+    try:
+        return cookies.get(key)
+    except TypeError:
+        return None
+
+
 TAB_KEYS = ["join", "notes", "map", "ideas", "everyone", "closing"]
 TAB_LABELS = {
     "join": "Join",
@@ -113,6 +126,15 @@ def render_facilitator_sidebar(session_code, data, cookies):
         st.sidebar.image(buf.getvalue(), caption="Scan to join", width=180)
     else:
         st.sidebar.info("Paste your deployed app URL above to generate the QR code and join link.")
+
+    st.sidebar.divider()
+    with st.sidebar.expander("🔍 Raw session data (recovery)"):
+        st.caption(
+            "Read-only. Shows everything actually stored for this session, including any fields "
+            "no longer used by the current screens — useful if the app changed shape since you "
+            "collected data and something you're looking for isn't shown anywhere anymore."
+        )
+        st.json(data)
 
     st.sidebar.divider()
     if st.sidebar.button("End session / start a new one"):
@@ -496,7 +518,7 @@ def main():
     # persists across refreshes but is scoped to that one browser, so it
     # can never ride along when a join link gets copied or forwarded
     # after someone has already joined.
-    cookie_device_id = cookies.get("workshop_device_id")
+    cookie_device_id = safe_cookie_get(cookies, "workshop_device_id")
     if cookie_device_id:
         device_id = cookie_device_id
         st.session_state.device_id = cookie_device_id
@@ -509,7 +531,7 @@ def main():
 
     # Facilitator status is also a cookie (set via password login), never
     # a URL flag.
-    is_facilitator = cookies.get("workshop_facilitator") == "1"
+    is_facilitator = safe_cookie_get(cookies, "workshop_facilitator") == "1"
 
     st_autorefresh(interval=4000, key="board_autorefresh")
 
