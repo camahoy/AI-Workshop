@@ -76,8 +76,9 @@ SCALE_QUESTIONS = [
     ("f2", "Tools are actually built for how your division works"),
 ]
 
-OPEN_TEXT_FIELDS = ("c2_limitation", "d2_wand", "d3_not_want", "e5_trust", "f3_fund", "g1_other")
+OPEN_TEXT_FIELDS = ("b1_other_desc", "c2_limitation", "d2_wand", "d3_not_want", "e5_trust", "f3_fund", "g1_other")
 OPEN_TEXT_LABELS = {
+    "b1_other_desc": "B1 — the other AI tool named",
     "c2_limitation": "C2 — biggest limitation of current AI tools",
     "d2_wand": "D2 — magic wand: what would you hand off to AI",
     "d3_not_want": "D3 — where you would NOT want AI involved",

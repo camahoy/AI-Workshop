@@ -38,6 +38,7 @@ def sync_step_ab(draft):
         a3_tenure=ss.get("sv_a3_tenure"),
         a4_region=(ss.get("sv_a4_region") or "").strip(),
         b1_tools=tools,
+        b1_other_desc=(ss.get("sv_b1_other_desc") or "").strip(),
         b2_freq=b2_freq,
         b3_built=ss.get("sv_b3_built"),
         b3a_desc=(ss.get("sv_b3a_desc") or "").strip(),
@@ -145,11 +146,15 @@ def render_step_ab(draft):
     st.text_input("Which region or market do you primarily support?", value=draft.get("a4_region", ""), key="sv_a4_region")
 
     st.markdown("#### Section B · Current AI usage (behavioral)")
-    st.caption("Behavioral first — what you actually use, not what you think you should say.")
     tools = st.multiselect(
         "B1. Which of the following AI tools do you currently use for work, even occasionally? Select all that apply.",
         survey.TOOL_OPTIONS, default=draft.get("b1_tools", []), key="sv_b1_tools",
     )
+    if "Something else" in tools:
+        st.text_input(
+            "What tool is it?", value=draft.get("b1_other_desc", ""), key="sv_b1_other_desc",
+            placeholder="Name the tool",
+        )
     detailed = [t for t in tools if t in survey.DETAILED_TOOLS]
     if detailed:
         st.caption("B2. For each tool selected above, how often do you use it?")
