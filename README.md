@@ -295,3 +295,9 @@ needed):
   rather than the URL, so it can't leak between devices via a copied/
   forwarded link. The survey has no such identity — no login, no cookie,
   just a per-browser-session flag against resubmission.
+
+---
+
+## ORBOU (`orbou/`)
+
+A separate project in this repo: ORBOU, a personal "living brief" app (Expo + Expo Router, deployed as a PWA on Vercel). It has nothing to do with the workshop app above. See [`orbou/README.md`](orbou/README.md).
