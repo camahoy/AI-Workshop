@@ -17,65 +17,118 @@ A two-part Streamlit app:
 
 ## Part 1: the live board
 
-### Identity model
+### Sessions and per-session settings
 
-No name is ever collected. Joining asks only for **Service Line /
-Division** (free text), **Title** (free text), and **Level** (used only
-for segmentation/reporting — never shown on posts, and never used to form
-groups; there are no breakout groups). Every post anywhere in the app is
-tagged `{Service Line} · {Title}`, never a name or device id. Individual
-per-person tracking (who already agreed with what, who already joined) is
-stored privately per device; only aggregate counts are shared.
+Data is namespaced by a session code passed as `?session=CODE` in the URL.
+Every session is its own row in the database, so sessions never see each
+other's data (SF-01 and PA-01 never mix), and every read, write, export and
+reset is scoped to the one session.
+
+Each session also stores its own **settings** (`lib/sessions.py`): which
+tabs show, what Join asks, whether posts carry an identity tag, and whether
+the summary is on. A new session starts from a template, picked on the
+setup screen:
+
+| Template | Tabs | Join asks | Posts show | Summary |
+|---|---|---|---|---|
+| **Field Notes workshop** (SF-01 style) | Join, Good Research, Meaning & Delegation, Bottleneck Bank, N = Everyone, Closing | Service Line, Title, Level | `Service Line · Title` tag | On (Closing tab) |
+| **Team pulse** (PA-01 style) | Join, Friction Points, AI in Our Work | Level only | No identity at all | Off by default |
+
+`SF-01` and `PA-01` are pinned to those templates. Any other code (e.g. `PA-02`,
+`NYC-03`) gets whichever template the facilitator picks, with no code changes.
+After starting, the facilitator can change that session's tabs and switch the
+summary on or off from **⚙️ Session settings** in the sidebar. Sessions created
+before per-session settings existed behave exactly as they did (workshop template).
+
+### Identity and anonymity
+
+No name is ever collected in any session.
+
+- **Workshop sessions** (SF-01): Join asks Service Line, Title and Level; every
+  post is tagged `{Service Line} · {Title}`. Level is used only for reporting.
+- **Team pulse sessions** (PA-01): Join asks Level only, and the Join screen shows
+  a count of people who've joined instead of a roster. No post or AI-log entry
+  shows any identity. Level is stored privately with each post and appears only
+  in the CSV export, never on screen (the facilitator's raw-data viewer is
+  hidden for these sessions, and Level is never sent to the summary).
+
+Who agreed with what is stored privately per device; only counts are shown.
 
 ### Screens
 
-1. **Join** — Service Line, Title, Level. Joining auto-advances to the next
-   screen. A facilitator-only "Reset board" control sits at the bottom:
-   click once to arm it, then click again within 5 seconds to confirm —
-   otherwise it auto-disarms. Confirming clears all posts, agree counts,
-   and the roster for this session only.
-2. **Good Research** — one fixed prompt, sticky-note wall, tagged posts,
-   each with an Agree toggle and live count (one agree per person per
-   note — a shared-sentiment signal, not a ranking).
-3. **Meaning & Delegation Map** — a true scatter plot (x = non-delegable →
-   delegable, y = not meaningful → meaningful): click the exact spot to
-   name a task, plus a 17-item task bank of chips that prefill the note
-   field. Placed tasks are color-coded by quadrant and agree-able.
-4. **Bottleneck Bank** — starts completely empty ("No bottlenecks posted
-   yet, be the first."), fills with unlimited participant-submitted ones,
-   each agree-able (no vote budget, no cap).
-5. **N = Everyone** — a standing reference screen, available throughout the
-   session (not part of the sequential flow). Explains what the survey is
-   and links out to the real survey app (Part 2) — it does not embed the
-   survey itself.
-6. **Closing** — only a facilitator-only streamed Claude synthesis of the
-   entire board (Good Research, Meaning & Delegation Map, Bottleneck Bank),
-   for projecting as the session's closing moment. No participant composer
-   on this screen, and no survey data feeds into this particular synthesis
-   — the survey has its own separate results/synthesis view (Part 2).
+- **Join**: see above. Joining auto-advances to the next tab.
+- **Good Research**: one fixed prompt, sticky-note wall, each note with an Agree
+  toggle and live count (one agree per person per note, a shared-sentiment
+  signal, not a ranking).
+- **Meaning & Delegation Map**: a scatter plot (delegable × meaningful); click
+  a spot to name a task, or tap one of 17 task-bank chips to prefill it.
+- **Bottleneck Bank / Friction Points**: the same agree-able wall with
+  different wording per template. Friction Points (PA-01) asks "Think of a
+  task you do regularly. Where does time or effort get lost?" and never
+  mentions AI. Both start empty.
+- **AI in Our Work** (PA-01): one entry is one experience. Fields: Task
+  (required), Tool used, How you used it, Outcome (required: Worked well /
+  Partly / Didn't work), What worked, What didn't, Biggest barrier (required;
+  choosing "Other" shows an optional text box), Rough time saved or lost
+  (optional), and a required confirmation that no client-identifiable or
+  confidential data was entered. There's a warning above the form, and no
+  link or attachment field. The top of the tab shows a live summary (entries
+  by outcome, barriers ranked by count). Entries show as cards, newest first,
+  with Outcome and Barrier labels, a "Same for me" toggle with a count (one
+  per person per entry), and filters for Outcome and Barrier.
+- **N = Everyone**: a signpost to the survey (Part 2).
+- **Closing**: the facilitator-only streamed Claude synthesis of the board.
 
-A "last updated Xs ago" indicator in the header reflects the most recent
-activity across the whole session.
+A "last updated Xs ago" indicator reflects the most recent activity, and every
+screen polls for updates every 4 seconds.
 
-### How sessions work
+### Facilitator access
 
-Data is namespaced by a session code passed as `?session=CODE` in the URL.
-Multiple concurrent sessions (different cities/cohorts) never see each
-other's data.
+Facilitator controls (Export, Reset board, Summary, session settings, join
+link/QR) appear only after entering the passphrase set as
+`FACILITATOR_PASSWORD` in Streamlit secrets. There is no URL flag, and
+participant links never show a login box or any control.
 
-- **Facilitator**: open the app's base URL with no `?session=` param. You'll
-  land on a setup screen to create a session code (e.g. `SF-01`) — if
-  `FACILITATOR_PASSWORD` is set in secrets, you'll need it here. Starting a
-  session unlocks a sidebar with the join link/QR code, plus a "Reset board"
-  control at the bottom of the Join screen (arm with one click, confirm with
-  a second click within 5 seconds, or it auto-disarms). Facilitator status is
-  stored as a browser cookie, so it survives refreshes on that device.
-- **Co-facilitators / a different device**: on any screen inside a session,
-  open "🔒 Facilitator login" (bottom of the sidebar) and enter the
-  password to unlock the same controls on that browser too.
-- **Participants**: never see or type the session code — they just scan the
-  QR code (or open the join link) the facilitator shares, which already has
-  `?session=CODE` baked in. They never see a facilitator login either.
+- **Facilitator**: open the app's base URL with no `?session=`. Enter a session
+  code, pick a template if it's a new code, enter the passphrase, and press
+  **Start or reopen session**. The same screen reopens an existing session,
+  which is how a co-facilitator on another device gets in.
+- The browser remembers the login for a day with a signed cookie (an HMAC of
+  the passphrase), so it can't be forged by hand, and changing the
+  passphrase logs every device out.
+- If `FACILITATOR_PASSWORD` isn't set, no one can get facilitator controls.
+
+**Export**: "⬇️ Export all boards (CSV)" is in the sidebar on every tab and
+also in the Facilitator block on the Join tab. It downloads a zip with one
+CSV per board for the current session (plus a Participants file), any time.
+Individual CSVs are under "Download one board at a time". Columns use plain
+names with no spaces, ready for a SharePoint List import:
+
+- `AILog.csv`: Task, Tool, HowUsed, Outcome, WhatWorked, WhatDidnt, Barrier,
+  BarrierOther, TimeImpact, SameForMeCount, Level, Created
+- `FrictionPoints.csv`: Post, AgreeCount, Level, Created
+- Workshop boards: `GoodResearch.csv` and `BottleneckBank.csv` (Post, Tag,
+  AgreeCount, Level, Created) and `MeaningDelegation.csv` (Task, X, Y,
+  Quadrant, Tag, AgreeCount, Level, Created)
+- `Participants.csv`: Level, Joined (pulse) or ServiceLine, Title, Level,
+  Joined (workshop)
+
+`Created` and `Joined` are UTC ISO 8601. Posts made before this change have
+no Level or Created value. Files are UTF-8 with a BOM, so Excel shows
+accents correctly.
+
+**Reset board** (Join tab, facilitator only): click once to arm it, then
+again within 5 seconds to confirm. It clears posts, agrees, roster and summary
+for the current session only, keeps the session's settings, and first saves a
+full copy to the `board_archive` table, so a mistaken reset can be recovered.
+
+**Summary**: for workshop sessions, it's in the Closing tab, as before. For
+sessions without a Closing tab (PA-01), it appears in the Join tab's
+Facilitator block, but only when switched on in Session settings. It's off by
+default for PA-01. The PA-01 summary uses its own system prompt (in
+`lib/claude_summary.py`): friction themes with post and agree counts, then
+outcome counts, ranked barriers, and what worked and what didn't by task type.
+It makes no recommendations.
 
 ## Part 2: N = Everyone survey
 
@@ -124,7 +177,11 @@ Both are called out again on the results page itself:
 
 `pages/2_Survey_Results.py`, gated by `SURVEY_RESULTS_PASSWORD` (a
 different secret than the live board's facilitator password — this page
-is for whoever's running the initiative, not respondents). Shows:
+is for whoever's running the initiative, not respondents). If that secret
+isn't set, the page stays locked. Shows:
+
+- An "⬇️ Export all responses (CSV)" button: one row per response, with
+  grid and MaxDiff answers kept as JSON text in their columns
 
 - Tabulated results for every closed-ended question: attitude averages,
   tool usage and per-tool B2/C1 grids, D1 task time and the D1a
@@ -155,19 +212,18 @@ Recorded per response, never used to block submission or auto-exclude:
 
 ## How the two parts relate
 
-They're two independent flows in one deployment, not one continuous
-session:
+They're two independent flows in one deployment that share one durable
+database (separate tables):
 
-- The live board's per-session data (`data/<CODE>.json`) is ephemeral by
-  design — reset between workshops, fine to lose on redeploy.
-- The survey's responses (`data/survey_responses.db`, SQLite) are meant to
-  outlive any single workshop and survive the full field window
-  independently — they're never cleared by the live board's "Reset board"
-  control, and the live board's closing synthesis doesn't read them (the
-  survey has its own separate results/synthesis view).
+- Board sessions live in `board_sessions` (one row per session code), with
+  reset snapshots in `board_archive`.
+- Survey responses live in `survey_responses`. They're never cleared by the
+  live board's "Reset board" control, and the live board's closing synthesis
+  doesn't read them.
 - The live board's "N = Everyone" tab is just a signpost pointing at the
-  survey (`st.page_link`) — it doesn't share identity, session code, or
-  any state with it.
+  survey (`st.page_link`); it doesn't share identity, session code, or any
+  state with it. In sessions that hide that tab (PA-01), participants don't
+  see the sidebar at all, so the survey and results pages aren't linked.
 
 ## Local development
 
@@ -192,34 +248,55 @@ never gets committed.
 3. In the app's **Settings → Secrets**, paste:
 
    ```toml
+   DATABASE_URL = "postgresql://postgres.xxxx:db-password@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
    ANTHROPIC_API_KEY = "sk-ant-your-real-key"
-   FACILITATOR_PASSWORD = "choose-a-password"
+   FACILITATOR_PASSWORD = "choose-a-passphrase"
    SURVEY_RESULTS_PASSWORD = "choose-a-different-password"
    APP_BASE_URL = "https://your-app-name.streamlit.app"
    SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/XXXXXXXX/exec"
    ```
 
-   `FACILITATOR_PASSWORD` is strongly recommended — without it, anyone who
-   opens the app's base URL can start sessions and unlock facilitator
-   controls. `SURVEY_RESULTS_PASSWORD` is equally recommended — without it,
-   anyone with the results page's URL can read every open-ended response.
-   `APP_BASE_URL` is optional — it just prefills the QR/join-link field in
-   the facilitator sidebar. `SHEETS_WEBHOOK_URL` is strongly recommended
-   before fielding the survey at any real scale — see below.
+   `DATABASE_URL` is required for anything you want to keep (see "Durable
+   storage" below). `FACILITATOR_PASSWORD` is required for any facilitator
+   control. `SURVEY_RESULTS_PASSWORD` is required to open the survey results
+   page. `APP_BASE_URL` is optional; it prefills the QR/join-link field.
+   `SHEETS_WEBHOOK_URL` is an optional extra off-site copy of survey
+   responses.
 
-   If either closing/results synthesis ever fails, the error shown in the
-   UI will say why (most commonly: `ANTHROPIC_API_KEY` missing or invalid).
+   If a summary ever fails, the error shown in the UI says why (most
+   commonly: `ANTHROPIC_API_KEY` missing or invalid).
 
-4. Deploy. The live board is stateless/file-backed and fine to let sleep
-   between sessions. **Streamlit Community Cloud's local disk is not
-   guaranteed to survive a redeploy, reboot, or sleep/wake cycle** — this
-   is a platform characteristic, not a bug, but it means both the live
-   board's JSON files and the survey's SQLite file can be lost by an app
-   restart with no warning. For the live board this is an acceptable
-   trade (it's meant to reset between sessions anyway). For the survey —
-   meant to run unattended for ~2 weeks — it's not, so treat
-   `SHEETS_WEBHOOK_URL` below as required, not optional, before sending
-   the survey link to anyone.
+4. Deploy, then open the base URL. The facilitator sidebar should say
+   "✓ Saved to the durable database". If it shows a red "Storage is NOT
+   durable" warning, `DATABASE_URL` isn't set.
+
+### Durable storage (`DATABASE_URL`)
+
+Streamlit Community Cloud doesn't keep local files across app restarts,
+sleeps or redeploys. The board used to store each session in
+`data/<CODE>.json` on that disk, which is how SF-01's posts were lost. All
+board and survey data now goes to a hosted Postgres database.
+
+Setup with Supabase (free tier, about 5 minutes):
+
+1. Create a project at supabase.com and set a database password.
+2. Click **Connect** (top of the project page) and copy the **Transaction
+   pooler** connection string (port 6543). Replace `[YOUR-PASSWORD]` with
+   your database password.
+3. Paste it into Streamlit secrets as `DATABASE_URL` and reboot the app. The
+   tables are created automatically on first run.
+
+To see the data directly, open Supabase → **Table Editor**:
+`board_sessions` (one row per session; the `data` column holds everything),
+`board_archive` (copies taken before each reset), `survey_responses`. Any
+Postgres host works (Neon, Railway, RDS, etc.). Supabase also takes daily
+backups on its side.
+
+On startup, the app also imports anything still sitting in the old local
+files (`data/*.json`, `data/survey_responses.db`) if the container still has
+them, without overwriting newer data. Without `DATABASE_URL` (local
+development), data goes to `data/app.db`, which is fine on your own machine
+but not durable on Streamlit Cloud.
 
 ### Backing up survey responses to Google Sheets (`SHEETS_WEBHOOK_URL`)
 
@@ -276,25 +353,18 @@ needed):
 ## Data & storage notes
 
 - Live board updates use polling (every 4 seconds), not websockets.
-- Board data is stored as JSON files under `data/`, one per session code —
-  ephemeral by design, fine to lose on redeploy.
-- Survey responses are stored in `data/survey_responses.db` (SQLite, WAL
-  mode), gitignored like the rest of `data/`, **and** POSTed to
-  `SHEETS_WEBHOOK_URL` if configured (see "Backing up survey responses to
-  Google Sheets" above) — the webhook copy is the one actually meant to
-  survive the full field window, since the local disk isn't guaranteed to.
-- Anonymous by design: no name is ever collected anywhere in either part.
-  The live board tags posts with Service Line · Title; the survey is
-  stricter still — individual responses are never displayed anywhere in
-  the UI, not even tagged, only aggregate stats and unattributed open-text
-  excerpts.
-- The `ANTHROPIC_API_KEY` is read server-side via `st.secrets` and is never
-  sent to the browser.
-- Each live-board device's identity (used to cap one agree per person per
-  item) lives in a browser cookie (`workshop_device_id`, ~30 day expiry)
-  rather than the URL, so it can't leak between devices via a copied/
-  forwarded link. The survey has no such identity — no login, no cookie,
-  just a per-browser-session flag against resubmission.
+- Board and survey data are stored durably in Postgres via `DATABASE_URL`
+  (`lib/db.py`). Writes are atomic per session, so simultaneous posts and
+  agrees never overwrite each other.
+- Survey responses are also POSTed to `SHEETS_WEBHOOK_URL` if configured, as
+  an extra off-site copy.
+- No name is ever collected anywhere. See "Identity and anonymity" above for
+  what each session type shows.
+- The `ANTHROPIC_API_KEY` and `DATABASE_URL` are read server-side via
+  `st.secrets` and never sent to the browser.
+- Each live-board device's identity (used to cap one agree / "same for me" per
+  person per item) lives in a browser cookie (`workshop_device_id`, ~30 day
+  expiry), not the URL, so it can't leak between devices via a forwarded link.
 
 ---
 

@@ -1,28 +1,18 @@
-"""Shared, file-backed storage for the live working-session board.
+"""Shared storage for the live working-session board.
 
-Streamlit Community Cloud runs one process for the whole app, so a JSON
-file on local disk is effectively shared state across every connected
-device. Data is namespaced by session code so multiple concurrent
-sessions never see each other's data. Storage is intentionally simple
-(no database) since the app is expected to sleep between sessions and
-data does not need to survive a redeploy.
+One document per session code, stored durably via lib/db.py (Postgres when
+DATABASE_URL is set). Data is namespaced by session code, so sessions never
+see each other's data: SF-01 and PA-01 are separate rows, and every read,
+write, export, and reset takes the session code.
 """
-import json
-import os
 import re
-import threading
 import time
-from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-
-_locks: dict[str, threading.Lock] = {}
-_locks_guard = threading.Lock()
+from lib import db
 
 _SAFE_CODE_RE = re.compile(r"[^A-Za-z0-9_-]")
 
-AGREE_COLLECTIONS = ("notes", "map", "ideas")
+AGREE_COLLECTIONS = ("notes", "map", "ideas", "ailog")
 
 
 def normalize_code(session_code: str) -> str:
@@ -30,24 +20,14 @@ def normalize_code(session_code: str) -> str:
     return code or "default"
 
 
-def _lock_for(session_code: str) -> threading.Lock:
-    code = normalize_code(session_code)
-    with _locks_guard:
-        if code not in _locks:
-            _locks[code] = threading.Lock()
-        return _locks[code]
-
-
-def _path(session_code: str) -> Path:
-    return DATA_DIR / f"{normalize_code(session_code)}.json"
-
-
 def _default_data() -> dict:
     return {
-        "roster": [],          # [{device_id, service_line, title, level}]
-        "notes": [],           # Good Research: [{id, text, tag}]
-        "map": [],             # Meaning & Delegation: [{id, text, x, y, tag}]
-        "ideas": [],           # Bottleneck Bank: [{id, text, tag}] — starts empty, no seeding
+        "config": None,        # per-session settings (lib/sessions.py); None = template default
+        "roster": [],          # [{device_id, level, joined, (service_line, title)}]
+        "notes": [],           # Good Research: [{id, text, tag?, level, created}]
+        "map": [],             # Meaning & Delegation: [{id, text, x, y, tag?, level, created}]
+        "ideas": [],           # Bottleneck Bank / Friction Points: [{id, text, tag?, level, created}]
+        "ailog": [],           # AI in Our Work: [{id, task, tool, how, outcome, worked, didnt, barrier, barrier_other, time_impact, level, created}]
         "agree_counts": {k: {} for k in AGREE_COLLECTIONS},   # {collection: {item_id: count}}
         "my_agree": {k: {} for k in AGREE_COLLECTIONS},       # {collection: {device_id: {item_id: True}}}
         "summary": None,       # {"text": ..., "generated_at": ...}
@@ -55,48 +35,65 @@ def _default_data() -> dict:
     }
 
 
-def load(session_code: str) -> dict:
-    path = _path(session_code)
-    if not path.exists():
-        return _default_data()
-    try:
-        with open(path, "r") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return _default_data()
-    defaults = _default_data()
-    defaults.update(data)
+def _fill_defaults(data: dict | None) -> dict:
+    out = _default_data()
+    if data:
+        out.update(data)
     for k in AGREE_COLLECTIONS:
-        defaults["agree_counts"].setdefault(k, {})
-        defaults["my_agree"].setdefault(k, {})
-    return defaults
+        out["agree_counts"].setdefault(k, {})
+        out["my_agree"].setdefault(k, {})
+    for k in ("roster", "notes", "map", "ideas", "ailog"):
+        if out.get(k) is None:
+            out[k] = []
+    return out
 
 
-def save(session_code: str, data: dict) -> None:
-    path = _path(session_code)
-    tmp_path = path.with_suffix(".tmp")
-    with open(tmp_path, "w") as f:
-        json.dump(data, f)
-    os.replace(tmp_path, path)
+def load(session_code: str) -> dict:
+    return _fill_defaults(db.get_doc(normalize_code(session_code)))
 
 
 def update(session_code: str, mutator) -> dict:
     """Load, mutate in place via `mutator(data)`, stamp last_updated, save,
-    return the resulting data. Every real participant action should route
-    through this so the "last updated" indicator reflects genuine activity."""
-    lock = _lock_for(session_code)
-    with lock:
-        data = load(session_code)
+    return the resulting data — atomically, so two people posting at once
+    never overwrite each other."""
+
+    def apply(raw):
+        data = _fill_defaults(raw)
         mutator(data)
         data["last_updated"] = time.time()
-        save(session_code, data)
         return data
+
+    return db.update_doc(normalize_code(session_code), _default_data(), apply)
+
+
+def set_config(session_code: str, config: dict) -> dict:
+    """Saves settings without counting as board activity."""
+
+    def apply(raw):
+        data = _fill_defaults(raw)
+        data["config"] = config
+        return data
+
+    return db.update_doc(normalize_code(session_code), _default_data(), apply)
 
 
 def reset(session_code: str) -> None:
-    lock = _lock_for(session_code)
-    with lock:
-        save(session_code, _default_data())
+    """Clears this session's posts, agrees, roster and summary. A full copy
+    is archived first (board_archive table) so a mistaken reset is
+    recoverable. The session's settings are kept, so PA-01 stays PA-01."""
+    code = normalize_code(session_code)
+    db.archive_doc(code, "reset")
+
+    def apply(raw):
+        fresh = _default_data()
+        fresh["config"] = (raw or {}).get("config")
+        return fresh
+
+    db.update_doc(code, _default_data(), apply)
+
+
+def now() -> float:
+    return time.time()
 
 
 def toggle_agree(d: dict, collection: str, item_id: str, device_id: str) -> None:

@@ -17,6 +17,8 @@ Sections:
 
 Keep it under 500 words. No markdown headers with #, short bolded-style labels using plain text. Be direct, avoid corporate filler, and do not force a false consensus if the data shows real disagreement or divergence by service line, name that divergence explicitly instead."""
 
+PULSE_SYSTEM_PROMPT = """You are summarizing a team pulse for the Public Affairs team. Part 1, friction points: group the posts into themes. For each theme give the number of posts and total agrees, with representative posts quoted or closely paraphrased. Part 2, AI in our work: give counts by outcome, the barriers ranked with counts, and what worked and what didn't grouped by task type. Do not recommend solutions or tools. Do not invent anything not in the data. Under 350 words."""
+
 DEFAULT_MODEL = "claude-sonnet-5"
 
 
@@ -69,7 +71,53 @@ BOTTLENECK BANK (ranked by how many people agreed it's a real bottleneck, tagged
 """.strip()
 
 
-def stream_summary(board_data: str):
+def build_pulse_data(data: dict) -> str:
+    """Team-pulse sessions: friction points + AI log. Never includes Level
+    or any identity — the summary is shown on screen."""
+    agree = data.get("agree_counts", {})
+    ideas_agree = agree.get("ideas", {})
+    ai_same = agree.get("ailog", {})
+    posts = data.get("ideas") or []
+    entries = data.get("ailog") or []
+
+    posts_text = "\n".join(f"- [{ideas_agree.get(p['id'], 0)} agree] {p['text']}" for p in posts) or "(none posted)"
+
+    outcome_counts: dict[str, int] = {}
+    barrier_counts: dict[str, int] = {}
+    for e in entries:
+        outcome_counts[e.get("outcome", "")] = outcome_counts.get(e.get("outcome", ""), 0) + 1
+        barrier_counts[e.get("barrier", "")] = barrier_counts.get(e.get("barrier", ""), 0) + 1
+    outcomes_text = ", ".join(f"{k}: {v}" for k, v in outcome_counts.items()) or "(none)"
+    barriers_text = "\n".join(
+        f"- {k}: {v}" for k, v in sorted(barrier_counts.items(), key=lambda kv: kv[1], reverse=True)
+    ) or "(none)"
+
+    def fmt(e):
+        parts = [f"Task: {e.get('task', '')}"]
+        for label, key in (("Tool", "tool"), ("How used", "how"), ("Outcome", "outcome"), ("What worked", "worked"),
+                           ("What didn't", "didnt"), ("Barrier", "barrier"), ("Barrier (other)", "barrier_other"),
+                           ("Time", "time_impact")):
+            if e.get(key):
+                parts.append(f"{label}: {e[key]}")
+        parts.append(f"Same for me: {ai_same.get(e['id'], 0)}")
+        return "- " + " | ".join(parts)
+
+    entries_text = "\n".join(fmt(e) for e in entries) or "(none)"
+
+    return f"""
+PART 1, FRICTION POINTS ({len(posts)} posts, with agree counts — agrees show a friction point is shared, not a ranking):
+{posts_text}
+
+PART 2, AI IN OUR WORK ({len(entries)} entries):
+Outcome counts: {outcomes_text}
+Barrier counts:
+{barriers_text}
+Entries:
+{entries_text}
+""".strip()
+
+
+def stream_summary(board_data: str, system_prompt: str = SYSTEM_PROMPT, max_tokens: int = 1200):
     """Yields text chunks as they arrive from the Claude API."""
     api_key = st.secrets.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -80,8 +128,8 @@ def stream_summary(board_data: str):
     client = Anthropic(api_key=api_key)
     with client.messages.stream(
         model=model,
-        max_tokens=1200,
-        system=SYSTEM_PROMPT,
+        max_tokens=max_tokens,
+        system=system_prompt,
         messages=[{"role": "user", "content": board_data}],
     ) as stream:
         for text in stream.text_stream:

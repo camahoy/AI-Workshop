@@ -30,6 +30,27 @@ html, body, [class*="css"] { font-family: 'Courier New', ui-monospace, monospace
 .summary-output { border: 2px solid var(--ink); background: var(--card); border-radius: 6px; padding: 18px; font-family: Georgia, serif; font-size: 14.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; }
 .quality-flag { display: inline-block; background: #fbe9df; border: 1px solid var(--rust); color: var(--rust); border-radius: 10px; padding: 2px 9px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; margin-left: 6px; }
 div[data-testid="stButton"] button[kind="primary"] { background-color: var(--mustard); border-color: var(--ink); color: var(--ink); }
+div[data-testid="stDownloadButton"] button[kind="primary"] { background-color: var(--mustard); border-color: var(--ink); color: var(--ink); }
+.join-count { font-family: Georgia, serif; font-size: 22px !important; }
+.warn-box { border: 1.5px solid var(--rust); background: #fbe9df; color: var(--rust); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; font-weight: 700; line-height: 1.45; margin: 4px 0 12px; }
+.stat-row { display: flex; gap: 8px; margin-top: 6px; }
+.stat { flex: 1; border: 1.5px solid var(--ink); border-radius: 4px; padding: 8px 6px; text-align: center; background: var(--paper); }
+.stat .num { font-family: Georgia, serif; font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--ink); }
+.stat .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--pencil); }
+.stat-good { border-color: var(--moss); } .stat-good .num { color: var(--moss); }
+.stat-mixed { border-color: var(--mustard); } .stat-mixed .num { color: var(--mustard); }
+.stat-bad { border-color: var(--rust); } .stat-bad .num { color: var(--rust); }
+.barrier-rank { margin: 6px 0 0; padding-left: 0; list-style: none; font-size: 13px; color: var(--ink); }
+.barrier-rank li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.barrier-rank li:last-child { border-bottom: none; }
+.barrier-rank .cnt { display: inline-block; min-width: 26px; font-weight: 700; color: var(--rust); }
+.ai-entry .ai-task { font-family: Georgia, serif; font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.ai-entry .ai-line { font-size: 12.5px; margin-top: 4px; }
+.chips { margin-bottom: 4px; }
+.chip { display: inline-block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; border: 1px solid var(--pencil); color: var(--pencil); border-radius: 10px; padding: 1px 8px; margin: 0 4px 4px 0; }
+.chip-good { border-color: var(--moss); color: var(--moss); }
+.chip-mixed { border-color: var(--mustard); color: #8a5d16; }
+.chip-bad { border-color: var(--rust); color: var(--rust); }
 </style>
 """
 
@@ -37,6 +58,16 @@ div[data-testid="stButton"] button[kind="primary"] { background-color: var(--mus
 def inject():
     import streamlit as st
     st.markdown(CSS, unsafe_allow_html=True)
+
+
+def hide_sidebar():
+    """Hides the sidebar and its page links (survey, results) entirely."""
+    import streamlit as st
+    st.markdown(
+        '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], '
+        '[data-testid="stSidebarNav"], [data-testid="collapsedControl"] { display: none !important; }</style>',
+        unsafe_allow_html=True,
+    )
 
 
 def esc(s: str) -> str:

@@ -57,7 +57,7 @@ def build_map_figure(notes: list[dict]) -> go.Figure:
             mode="markers",
             marker=dict(size=12, color=QUAD_COLORS[q], line=dict(width=1, color=INK)),
             name=QUAD_LABELS[q],
-            hovertext=[f"{n['text']} — {n.get('tag', 'Unspecified')}" for n in subset],
+            hovertext=[f"{n['text']} — {n['tag']}" if n.get("tag") else n["text"] for n in subset],
             hoverinfo="text",
             showlegend=bool(subset),
         ))

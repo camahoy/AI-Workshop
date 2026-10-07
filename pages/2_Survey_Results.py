@@ -2,9 +2,14 @@
 responses, and an AI-generated synthesis. Gated by a shared passphrase
 (not real authentication — this just keeps it off the same link
 respondents use to take the survey)."""
+import csv
+import io
+import json
+import time
+
 import streamlit as st
 
-from lib import survey, survey_db, survey_summary, theme
+from lib import db, survey, survey_db, survey_summary, theme
 
 st.set_page_config(page_title="N = Everyone — Results", page_icon="📊", layout="centered")
 theme.inject()
@@ -14,8 +19,11 @@ def render_gate():
     theme.header("N = Everyone", "Results (facilitator only)")
     configured = st.secrets.get("SURVEY_RESULTS_PASSWORD")
     if not configured:
-        st.caption("No SURVEY_RESULTS_PASSWORD is set in secrets — anyone with this page's URL can view results. Set one in Streamlit secrets to require it.")
-        st.session_state["results_authed"] = True
+        st.markdown(
+            '<div class="prompt-box"><div class="label">Results are locked</div>'
+            "<p>Set SURVEY_RESULTS_PASSWORD in Streamlit secrets to open this page.</p></div>",
+            unsafe_allow_html=True,
+        )
         return
     st.markdown(
         '<div class="prompt-box"><div class="label">Passphrase required</div>'
@@ -29,6 +37,24 @@ def render_gate():
             st.rerun()
         else:
             st.error("Incorrect passphrase.")
+
+
+def responses_csv(responses) -> bytes:
+    """One row per response. Nested answers (grids, MaxDiff sets) are kept as
+    JSON text in their column; metadata columns lead."""
+    meta = ["_id", "_submitted_at", "_time_to_complete_seconds", "_straightlining"]
+    keys = sorted({k for r in responses for k in r if k not in meta})
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ResponseId", "Submitted", "TimeToCompleteSeconds", "Straightlining"] + keys)
+    for r in responses:
+        submitted = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(r["_submitted_at"])) if r.get("_submitted_at") else ""
+        row = [r.get("_id"), submitted, r.get("_time_to_complete_seconds") or "", r.get("_straightlining")]
+        for k in keys:
+            v = r.get(k)
+            row.append(json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else ("" if v is None else v))
+        w.writerow(row)
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def pct(n, d):
@@ -133,6 +159,16 @@ def render_results():
 
     theme.header("N = Everyone", "Results")
     st.markdown(f'<div class="board-status">{n} response{"s" if n != 1 else ""} recorded</div>', unsafe_allow_html=True)
+    if not db.is_durable():
+        st.error("Storage is NOT durable: responses are on this server's local disk. Set DATABASE_URL (see README) and export often.")
+    if n:
+        st.download_button(
+            "⬇️ Export all responses (CSV)",
+            data=responses_csv(responses),
+            file_name=f"NEveryone_responses_{time.strftime('%Y%m%d-%H%M', time.gmtime())}.csv",
+            mime="text/csv",
+            type="primary",
+        )
 
     if n == 0:
         st.markdown('<div class="empty-note">No survey responses yet.</div>', unsafe_allow_html=True)

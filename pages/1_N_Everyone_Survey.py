@@ -1,8 +1,9 @@
 """N = Everyone: the real, standalone AI Perceptions & Workflow Assessment
 survey. Open to the whole company via a shared link, no login required.
-Answers persist to a SQLite file (lib/survey_db.py) independent of the
-live board's ephemeral per-session state, since this is meant to field
-for about two weeks rather than reset with a workshop.
+Answers persist to the durable database (lib/survey_db.py → lib/db.py,
+Postgres when DATABASE_URL is set) in their own table, independent of the
+live board's per-session data, since this fields for about two weeks
+rather than resetting with a workshop.
 
 See lib/survey.py's module docstring for what was simplified relative to
 a real survey platform (MaxDiff via leave-one-out sets, D1a capped at 8
