@@ -15,6 +15,10 @@ A two-part Streamlit app:
    (`pages/2_Survey_Results.py`). It's a separate flow with its own
    persistent storage — see "How the two parts relate" below.
 
+> **Also in this repo:** `pa_boards/` is a separate Streamlit app with three
+> live boards for the US Public Affairs AI session. It has its own entry
+> point, data and secrets. See [pa_boards/README.md](pa_boards/README.md).
+
 ## Part 1: the live board
 
 ### Identity model

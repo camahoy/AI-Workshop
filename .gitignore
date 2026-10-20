@@ -7,3 +7,5 @@ __pycache__/
 .DS_Store
 venv/
 .venv/
+pa_boards/data/
+.pytest_cache/

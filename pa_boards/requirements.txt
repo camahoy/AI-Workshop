@@ -1,0 +1,4 @@
+streamlit>=1.40
+qrcode[pil]>=7.4
+streamlit-cookies-controller>=0.0.4
+requests>=2.31
