@@ -71,6 +71,16 @@ NEXT_OPTIONS = [
     "Ask-me sessions and tutorials (e.g. building good prompts)",
 ]
 
+# Board C: each option card has its own "in what?" input. Same order as NEXT_OPTIONS.
+OPTION_PROMPTS = [
+    ("Showcases of what?", "e.g. AI for tab checks, or drafting proposals"),
+    ("Updates on what?", "e.g. which tools we're allowed to use"),
+    ("Which wins should it cover?", "e.g. time saved on trackers"),
+    ("What do you want answered?", "e.g. can I paste open-ends into Copilot?"),
+    ("Sessions or tutorials on what?", "e.g. prompts for questionnaire design"),
+]
+assert len(OPTION_PROMPTS) == len(NEXT_OPTIONS)
+
 SEED_LABEL = "From the 13 Aug session (other service lines)"
 SEEDS_B = [
     "Admin spread across many sheets and systems (iTime, JobBook, trackers)",

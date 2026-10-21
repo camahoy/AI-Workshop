@@ -261,9 +261,8 @@ with sync_playwright() as p:
     check("Board C", "Pick several options; counts hidden until reveal", c_participant)
 
     def c_option_comment():
-        c_page.get_by_role("button", name="💬 Add a comment").nth(4).click()
-        c_page.locator('input[aria-label="Your comment (e.g. what exactly you\'d like)"]').fill("Prompt clinics by task type (QC)")
-        c_page.get_by_role("button", name="Add comment").click()
+        c_page.locator('input[aria-label="Sessions or tutorials on what? (optional)"]').fill("Prompt clinics by task type (QC)")
+        c_page.get_by_role("button", name="Add", exact=True).nth(4).click()
         expect(c_page.get_by_text("Prompt clinics by task type (QC)")).to_be_visible(timeout=15000)
         comment = next(c for c in store.option_comments(store.load(), 4) if "Prompt clinics" in c["text"])
         up = c_page.locator(f"xpath=//div[contains(@class,'pa-comment')][contains(., 'Prompt clinics by task type (QC)')]"
@@ -271,12 +270,13 @@ with sync_playwright() as p:
         up.click()
         expect(up).to_have_text("✓ Upvoted · 1", timeout=15000)
         assert len(store.find_item(store.load(), "c", comment["id"])["votes"]) == 1
-        return "comment added under option 5 and upvoted once"
-    check("Board C", "Comment on an option, upvote the comment", c_option_comment)
+        expect(c_page.get_by_role("button", name="☑  " + config.NEXT_OPTIONS[4])).to_be_visible(timeout=15000)
+        return "typed 'Sessions or tutorials on what?' on card 5: detail shows under it, card got ticked, upvoted once"
+    check("Board C", "Add an 'in what?' detail to an option, upvote it", c_option_comment)
 
     def c_other():
         c_page.locator('textarea[aria-label="' + config.BOARDS["c"]["other_label"] + '"]').fill("AI wins in our weekly huddle (QC)")
-        c_page.get_by_role("button", name="Add", exact=True).click()
+        c_page.get_by_role("button", name="Add", exact=True).last.click()
         expect(c_page.locator(".pa-post", has_text="AI wins in our weekly huddle (QC)")).to_be_visible(timeout=15000)
         btn = vote_button(c_page, "Monthly AI office hours")
         before = int(btn.inner_text().split("·")[-1].split()[0])

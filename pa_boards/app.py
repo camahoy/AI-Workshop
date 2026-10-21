@@ -315,10 +315,13 @@ def render_participant_posts(key, data, browser_id):
 
 
 def submit_option_comment(index):
+    """Adding a detail ("showcases of what?") also ticks that option."""
     ss = st.session_state
     text = ss.get(f"oc_text_{index}") or ""
-    if text.strip():
-        store.add_comment("c", store.option_parent(index), ss.browser_id, text, ss.get(f"oc_name_{index}") or "")
+    if text.strip() and store.add_comment("c", store.option_parent(index), ss.browser_id, text,
+                                          ss.get(f"oc_name_{index}") or ""):
+        if index not in store.load()["boards"]["c"]["picks"].get(ss.browser_id, []):
+            store.toggle_pick(ss.browser_id, index)
 
 
 def render_option_comment(c, browser_id, is_open):
@@ -331,8 +334,9 @@ def render_option_comment(c, browser_id, is_open):
 
 @st.fragment(run_every=PARTICIPANT_REFRESH_S)
 def next_options(browser_id):
-    """The five option cards: tick state, comments with upvotes, and an
-    "Add a comment" form. Option vote counts stay hidden until revealed."""
+    """The five option cards: tick state, the details people added (with
+    upvotes), and an always-visible "in what?" input. Option vote counts
+    stay hidden until revealed."""
     data = store.load()
     if board_state_changed("c", data):
         st.rerun()
@@ -349,16 +353,14 @@ def next_options(browser_id):
             for c in store.ranked(store.option_comments(data, i)):
                 render_option_comment(c, browser_id, is_open)
             if is_open:
-                showing = st.session_state.get("open_option_comment") == i
-                st.button("Cancel" if showing else "💬 Add a comment", key=f"oc_toggle_{i}",
-                          on_click=set_state, args=("open_option_comment", None if showing else i))
-                if showing:
-                    with st.form(f"oc_form_{i}", clear_on_submit=True):
-                        st.text_input("Your comment (e.g. what exactly you'd like)", max_chars=config.MAX_COMMENT_CHARS, key=f"oc_text_{i}")
-                        st.text_input("Name (optional)", max_chars=config.MAX_NAME_CHARS, key=f"oc_name_{i}")
-                        st.caption(config.PRIVACY_LINE)
-                        st.form_submit_button("Add comment", use_container_width=True,
-                                              on_click=submit_option_comment, args=(i,))
+                question, example = config.OPTION_PROMPTS[i]
+                with st.form(f"oc_form_{i}", clear_on_submit=True):
+                    st.text_input(f"{question} (optional)", placeholder=example,
+                                  max_chars=config.MAX_COMMENT_CHARS, key=f"oc_text_{i}")
+                    st.text_input("Name (optional)", max_chars=config.MAX_NAME_CHARS, key=f"oc_name_{i}")
+                    st.caption(config.PRIVACY_LINE)
+                    st.form_submit_button("Add", use_container_width=True,
+                                          on_click=submit_option_comment, args=(i,))
     if board["revealed"]:
         s = summary.summarize_next(data)
         n = s["totals"]["participants"]
@@ -389,7 +391,7 @@ def render_participant_next(data, browser_id):
     board_state_changed("c", data)
     is_open = data["boards"]["c"]["open"]
     if is_open:
-        st.markdown("Pick as many as you like. Tap again to untick. Add a comment to any option to say more.")
+        st.markdown("Pick as many as you like. Tap again to untick. Use the box on each card to say what exactly you'd like.")
     else:
         st.markdown('<div class="pa-closed">Voting is closed. Thank you!</div>', unsafe_allow_html=True)
     next_options(browser_id)
