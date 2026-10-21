@@ -744,6 +744,12 @@ def main():
         return
 
     token = passcode_token()
+    if token is None:
+        # Same as the SF app's facilitator screen: with no password configured,
+        # the controls are open, with a warning saying so.
+        st.sidebar.warning("No presenter password is set, so anyone with this link can use these controls.")
+        render_presenter(key, data, cookies)
+        return
     if token and st.session_state.get("cookie_presenter_pending"):
         if safe_cookie_write(cookies, "set", PRESENTER_COOKIE, token, max_age=60 * 60 * 12):
             st.session_state.pop("cookie_presenter_pending")
