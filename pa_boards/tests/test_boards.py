@@ -268,3 +268,17 @@ def test_summary_speed_100_posts(store):
     summary.to_text(s)
     assert time.time() - t0 < 2
     assert len(s["top"]) == 5 and s["by_hours"][0]["hours"] == 21 * 10 / 60 * 2
+
+
+def test_merge_browser_no_double_count(store):
+    p = store.add_post("a", "temp", "posted before the cookie arrived")
+    store.toggle_vote("a", p["id"], "temp")
+    store.toggle_vote("a", p["id"], "real")  # tapped again once the real id was in use
+    store.toggle_pick("temp", 0)
+    store.toggle_pick("real", 0)
+    store.toggle_pick("temp", 2)
+    store.merge_browser("temp", "real")
+    d = store.load()
+    post = store.find_post(d, "a", p["id"])
+    assert post["votes"] == ["real"] and post["browser_id"] == "real"
+    assert d["boards"]["c"]["picks"] == {"real": [0, 2]}

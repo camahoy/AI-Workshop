@@ -341,6 +341,35 @@ def add_other(browser_id: str, text: str, name: str = "") -> bool:
     return bool(done)
 
 
+def merge_browser(old_id: str, new_id: str) -> None:
+    """A page can act for a moment under a temporary id before the
+    browser's cookie id arrives. Move everything done under old_id to
+    new_id, so nothing is counted twice: votes and picks are de-duplicated
+    and posts/comments keep their author."""
+    if not old_id or not new_id or old_id == new_id:
+        return
+
+    def mutate(d):
+        changed = False
+        for key in config.BOARD_KEYS:
+            board = d["boards"][key]
+            for item in iter_items(board):
+                if item.get("browser_id") == old_id:
+                    item["browser_id"] = new_id
+                    changed = True
+                votes = item.get("votes", [])
+                if old_id in votes:
+                    votes[:] = list(dict.fromkeys(new_id if v == old_id else v for v in votes))
+                    changed = True
+            picks = board.get("picks", {})
+            if old_id in picks:
+                merged = picks.get(new_id, []) + picks.pop(old_id)
+                picks[new_id] = list(dict.fromkeys(merged))
+                changed = True
+        return changed or False
+    update(mutate)
+
+
 def set_board_flag(key: str, flag: str, value) -> dict:
     def mutate(d):
         d["boards"][key][flag] = value

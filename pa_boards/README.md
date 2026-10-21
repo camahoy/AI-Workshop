@@ -10,7 +10,10 @@ the repo root. It has its own entry point (`pa_boards/app.py`), storage,
 secrets and URL, and shares nothing with `app.py` or the N = Everyone
 survey.
 
-## Deploy (Streamlit Community Cloud)
+## Where it runs
+`pages/3_PA_Live_Boards.py` serves these boards as a page of the SF app in the repo root. They're live at `<SF app address>/PA_Live_Boards?board=a|b|c` as soon as this branch is merged into the branch that app deploys from, with no new deployment. The presenter passcode falls back to the SF app's `FACILITATOR_PASSWORD`.
+
+## Deploy as a separate app instead (Streamlit Community Cloud)
 1. On share.streamlit.io, choose **Create app**, pick this repo and branch, and set the main file path to `pa_boards/app.py`.
    Streamlit installs `pa_boards/requirements.txt` and uses the repo's `.streamlit/config.toml` theme.
 2. Under **Settings → Secrets**, paste from `secrets.toml.example`. At minimum, set `PRESENTER_PASSCODE`.

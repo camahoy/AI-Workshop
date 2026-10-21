@@ -7,8 +7,10 @@ from PIL import Image
 SLIDE_SIZE = 1200
 
 
-def participant_url(base_url: str, key: str) -> str:
-    return f"{base_url.rstrip('/')}/?board={key}"
+def participant_url(base_url: str, key: str, page: str = "") -> str:
+    """page: the Streamlit page path when the boards run as a page of
+    another app (e.g. "PA_Live_Boards"), empty when run on their own."""
+    return f"{base_url.rstrip('/')}/{page}?board={key}"
 
 
 def png(url: str, size: int = SLIDE_SIZE) -> bytes:

@@ -1,13 +1,13 @@
 # Facilitator guide: US Public Affairs AI session live boards
 
-**App:** `https://<your-boards-app>.streamlit.app` (fill in once deployed)
-**Presenter passcode:** set as `PRESENTER_PASSCODE` in the app's Secrets. Don't write it on slides.
+**App:** the boards run as the **PA Live Boards** page of the existing SF Streamlit app, at the same web address (`<SF app address>/PA_Live_Boards`). Nobody needs to sign in.
+**Presenter passcode:** the SF app's facilitator password (`FACILITATOR_PASSWORD` in its Secrets). Don't put it on slides.
 
-| Board | Participant link (QR) | Presenter (projector) | Slide |
+| Board | Phones and laptops (QR) | Projector | Slide |
 |---|---|---|---|
-| A · How we use AI | `…/?board=a` | `…/?board=a&view=present` | Part 1 |
-| B · Time drains | `…/?board=b` | `…/?board=b&view=present` | Part 2 |
-| C · What's next | `…/?board=c` | `…/?board=c&view=present` | Part 5 |
+| A · How we use AI | `…/PA_Live_Boards?board=a` | `…/PA_Live_Boards?board=a&view=present` | Part 1 |
+| B · Time drains | `…/PA_Live_Boards?board=b` | `…/PA_Live_Boards?board=b&view=present` | Part 2 |
+| C · What's next | `…/PA_Live_Boards?board=c` | `…/PA_Live_Boards?board=c&view=present` | Part 5 |
 
 ## The day before
 1. Open any presenter link, enter the passcode, then open **Settings** in the left sidebar:

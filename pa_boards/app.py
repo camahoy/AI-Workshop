@@ -22,7 +22,8 @@ from datetime import date
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import streamlit as st
 from streamlit_cookies_controller import CookieController
@@ -63,8 +64,14 @@ def secret(name, default=None):
         return default
 
 
+# Set by ../pages/3_PA_Live_Boards.py when the boards run as a page of the
+# SF app, so QR codes and links include the page path.
+PAGE = os.environ.get("PA_BOARDS_PAGE", "")
+
+
 def passcode_token() -> str | None:
-    code = secret("PRESENTER_PASSCODE")
+    # As a page of the SF app, its FACILITATOR_PASSWORD also works.
+    code = secret("PRESENTER_PASSCODE") or secret("FACILITATOR_PASSWORD")
     if not code:
         return None
     return hashlib.sha256(f"pa-boards:{code}".encode()).hexdigest()[:24]
@@ -110,6 +117,10 @@ def browser_identity(cookies) -> str:
     st.session_state["_cookie_synced"] = True
     existing = safe_cookie_get(cookies, BROWSER_COOKIE)
     if existing:
+        temporary = st.session_state.get("browser_id")
+        if temporary and temporary != existing:
+            # Tapped before the cookie arrived: hand those taps to the real id.
+            store.merge_browser(temporary, existing)
         st.session_state.browser_id = existing
         return existing
     if "browser_id" not in st.session_state:
@@ -471,7 +482,7 @@ def render_presenter_login():
     st.markdown('<div class="pa-question">Presenter view</div>', unsafe_allow_html=True)
     token = passcode_token()
     if not token:
-        st.error("PRESENTER_PASSCODE is not set in this app's secrets, so the presenter view is locked. Add it under Settings → Secrets.")
+        st.error("Neither PRESENTER_PASSCODE nor FACILITATOR_PASSWORD is set in this app's secrets, so the presenter view is locked. Add it under Settings → Secrets.")
         return
     with st.form("presenter_login"):
         code = st.text_input("Presenter passcode", type="password")
@@ -499,7 +510,7 @@ def live_sidebar(key):
                        mime="application/zip", use_container_width=True)
     url = base_url(data)
     if url:
-        st.download_button("QR code PNG (this board)", qr_png(qr.participant_url(url, key)),
+        st.download_button("QR code PNG (this board)", qr_png(qr.participant_url(url, key, PAGE)),
                            f"qr-board-{key}.png", mime="image/png", use_container_width=True)
         st.download_button("QR code PNGs (all 3, .zip)", qr_zip(url), "pa-boards-qr.zip",
                            mime="application/zip", use_container_width=True)
@@ -525,7 +536,7 @@ def qr_zip(url: str) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         for k in config.BOARD_KEYS:
-            z.writestr(f"qr-board-{k}.png", qr_png(qr.participant_url(url, k)))
+            z.writestr(f"qr-board-{k}.png", qr_png(qr.participant_url(url, k, PAGE)))
     return buf.getvalue()
 
 
@@ -696,7 +707,7 @@ def presenter_display(key):
     if qr_col is not None:
         with qr_col:
             if url:
-                link = qr.participant_url(url, key)
+                link = qr.participant_url(url, key, PAGE)
                 img = base64.b64encode(qr_png(link, 600)).decode()
                 short = link.split("://", 1)[-1]
                 st.markdown(
