@@ -21,13 +21,17 @@
 - Put the presenter link for the current board on the projector. Collapse the sidebar (`«`) so only the board shows. The projector updates about every 2 seconds. Phones redraw whenever someone taps, or with **↻ Refresh**, and on their own every 30 seconds, so point people to the projector for the live view.
 - The **QR code** stays on screen until you press **Hide QR code**.
 - **Close posting** when the time is up. This stops new posts, votes and comments and generates the summary on screen. **Reopen posting** undoes it.
-- **Generate summary** gives totals, the top 5, tool and task counts (Board A), and estimated hours per month (Board B). **Remove summary from screen** hides it again.
-- **Board C:** results stay hidden until you press **Reveal results**. Phones see them too once revealed.
-- **Moderate (hide a post):** tap a post to hide it. It disappears from phones, the projector, the summary and the export. Tap again to unhide.
+- **Generate summary** gives totals and the top 5, plus tool and task counts (Board A), estimated hours per month (Board B), or votes per option with every comment and Other entry (Board C). **Remove summary from screen** hides it again.
+- **Generate AI themes (A + B)** appears only once an Ipsos-approved model is connected in the app's settings and switched on under **Settings**. Until then it's hidden, and the rule-based summary is the one to use.
+- **Board C:** people tick any of the 5 options, comment on an option (others can upvote those comments), and add their own under **Other** (others can upvote and comment). Comments and Other entries show up as they come in. The vote counts on the 5 options stay hidden until you press **Reveal results**. The projector then shows the bars, the most-upvoted comment under each option, and the top Other ideas, and phones see the bars too.
+- **Moderate (hide a post or comment):** tap an item to hide it. It disappears from phones, the projector, the summary and the export. Tap again to unhide. Use it for anything that names a client or a person.
 - Switch boards with the **A · B · C** links at the top of the sidebar. You stay logged in.
 
 ## After the session
-1. **Export all boards + summary (.zip)** gives three CSVs plus `summary.txt`. The Board B CSV columns match the Wishlist tab (`Time drain, How often, Minutes each time, Votes, Comments, Source`), so you can paste the rows straight in.
+1. **Export all boards + summary (.zip)** gives three CSVs plus `summary.txt`.
+   - Board B columns: `Time drain, How often, Minutes each time, Votes, Comments, Source`. Paste the rows straight into the Wishlist tab.
+   - Board A columns: `Use, Tool, Task type, Votes, Comments, Name`.
+   - Board C columns: `Option, Text, Votes, Comments`, one row per option and one per Other entry.
 2. Press **Delete all data (all boards)**, then confirm within 6 seconds. If you don't, everything is deleted automatically on the date shown under Settings.
 
 ## Good to know

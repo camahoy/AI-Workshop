@@ -175,7 +175,7 @@ def post_meta_html(key, post) -> str:
         if post.get("minutes"):
             chips.append(f'<span class="pa-chip">{post["minutes"]} min each time</span>')
     who = esc(post["name"]) if post.get("name") else ("" if post.get("seed") else "Anonymous")
-    n_votes, n_comments = len(post["votes"]), len(post["comments"])
+    n_votes, n_comments = len(post["votes"]), len(store.visible_comments(post))
     counts = f'{n_votes} vote{"" if n_votes == 1 else "s"} · {n_comments} comment{"" if n_comments == 1 else "s"}'
     who_part = f"{who} · " if who else ""
     return "".join(chips) + f'<div class="meta">{who_part}{counts}</div>'
@@ -224,11 +224,16 @@ def submit_comment(key, post_id):
         store.add_comment(key, post_id, ss.browser_id, text, ss.get(f"cf_name_{post_id}") or "")
 
 
+def comment_html(c) -> str:
+    who = esc(c["name"]) if c.get("name") else "Anonymous"
+    return f'<div class="pa-comment">{esc(c["text"])} <span class="who">— {who}</span></div>'
+
+
 def render_comments(key, post, browser_id, is_open):
-    for c in post["comments"]:
-        who = esc(c["name"]) if c.get("name") else "Anonymous"
-        st.markdown(f'<div class="pa-comment">{esc(c["text"])} <span class="who">— {who}</span></div>', unsafe_allow_html=True)
-    if not post["comments"]:
+    comments = store.visible_comments(post)
+    for c in comments:
+        st.markdown(comment_html(c), unsafe_allow_html=True)
+    if not comments:
         st.markdown('<div class="pa-empty">No comments yet.</div>', unsafe_allow_html=True)
     if is_open:
         with st.form(f"comment_form_{post['id']}", clear_on_submit=True):
@@ -257,7 +262,7 @@ def render_post(key, post, browser_id, is_open):
     # One comment thread open at a time keeps the page light enough for
     # 40 phones refreshing every few seconds.
     showing = st.session_state.get("open_comments") == post["id"]
-    comment_col.button("Hide comments" if showing else f"💬 Comments ({len(post['comments'])})",
+    comment_col.button("Hide comments" if showing else f"💬 Comments ({len(store.visible_comments(post))})",
                        key=f"comments_{post['id']}", use_container_width=True,
                        on_click=set_state, args=("open_comments", None if showing else post["id"]))
     if showing:
@@ -287,7 +292,10 @@ def posts_feed(key, browser_id):
     if not posts:
         st.markdown('<div class="pa-empty">Nothing yet. Be the first to post.</div>', unsafe_allow_html=True)
     show_all = st.session_state.get(f"show_all_{key}", False)
-    for post in posts if show_all else posts[:FEED_LIMIT]:
+    # Top posts, plus always your own: a new post starts at 0 votes and
+    # would otherwise sit below the fold on a busy board.
+    shown = posts if show_all else posts[:FEED_LIMIT] + [p for p in posts[FEED_LIMIT:] if p["browser_id"] == browser_id]
+    for post in shown:
         render_post(key, post, browser_id, is_open)
     if len(posts) > FEED_LIMIT:
         # Fixed label: a label that changes with every new post makes
@@ -306,8 +314,25 @@ def render_participant_posts(key, data, browser_id):
     posts_feed(key, browser_id)
 
 
+def submit_option_comment(index):
+    ss = st.session_state
+    text = ss.get(f"oc_text_{index}") or ""
+    if text.strip():
+        store.add_comment("c", store.option_parent(index), ss.browser_id, text, ss.get(f"oc_name_{index}") or "")
+
+
+def render_option_comment(c, browser_id, is_open):
+    st.markdown(comment_html(c), unsafe_allow_html=True)
+    mine = browser_id in c.get("votes", [])
+    n = len(c.get("votes", []))
+    st.button(f"✓ Upvoted · {n}" if mine else f"▲ Upvote · {n}", key=f"vote_{c['id']}",
+              disabled=not is_open, on_click=store.toggle_vote, args=("c", c["id"], browser_id))
+
+
 @st.fragment(run_every=PARTICIPANT_REFRESH_S)
 def next_options(browser_id):
+    """The five option cards: tick state, comments with upvotes, and an
+    "Add a comment" form. Option vote counts stay hidden until revealed."""
     data = store.load()
     if board_state_changed("c", data):
         st.rerun()
@@ -317,40 +342,65 @@ def next_options(browser_id):
     st.button("↻ Refresh", key="refresh_c")
     for i, label in enumerate(config.NEXT_OPTIONS):
         picked = i in mine
-        st.button(f"{'☑' if picked else '☐'}  {label}", key=f"pick_{i}", type="primary" if picked else "secondary",
-                  disabled=not is_open, use_container_width=True,
-                  on_click=store.toggle_pick, args=(browser_id, i))
-    my_others = [o["text"] for o in board["others"] if o["browser_id"] == browser_id and not o["hidden"]]
-    if my_others:
-        st.markdown("**Your other ideas:** " + " · ".join(esc(t) for t in my_others), unsafe_allow_html=True)
+        with st.container(border=True):
+            st.button(f"{'☑' if picked else '☐'}  {label}", key=f"pick_{i}", type="primary" if picked else "secondary",
+                      disabled=not is_open, use_container_width=True,
+                      on_click=store.toggle_pick, args=(browser_id, i))
+            for c in store.ranked(store.option_comments(data, i)):
+                render_option_comment(c, browser_id, is_open)
+            if is_open:
+                showing = st.session_state.get("open_option_comment") == i
+                st.button("Cancel" if showing else "💬 Add a comment", key=f"oc_toggle_{i}",
+                          on_click=set_state, args=("open_option_comment", None if showing else i))
+                if showing:
+                    with st.form(f"oc_form_{i}", clear_on_submit=True):
+                        st.text_input("Your comment (e.g. what exactly you'd like)", max_chars=config.MAX_COMMENT_CHARS, key=f"oc_text_{i}")
+                        st.text_input("Name (optional)", max_chars=config.MAX_NAME_CHARS, key=f"oc_name_{i}")
+                        st.caption(config.PRIVACY_LINE)
+                        st.form_submit_button("Add comment", use_container_width=True,
+                                              on_click=submit_option_comment, args=(i,))
     if board["revealed"]:
         s = summary.summarize_next(data)
         n = s["totals"]["participants"]
         st.markdown(f"### Results · {n} {'person' if n == 1 else 'people'}")
         st.markdown(bars_html(s["options"]), unsafe_allow_html=True)
     else:
-        st.markdown('<div class="pa-status" style="margin-top:16px">Results appear here when the presenter reveals them.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="pa-status" style="margin-top:16px">Vote counts appear here when the presenter reveals them.</div>', unsafe_allow_html=True)
+
+
+@st.fragment(run_every=PARTICIPANT_REFRESH_S)
+def other_entries(browser_id):
+    data = store.load()
+    is_open = data["boards"]["c"]["open"]
+    others = store.visible_others(data)
+    st.markdown(f'<div class="pa-status" style="margin-top:12px">{plural(len(others), "Other idea")} · most upvotes first</div>', unsafe_allow_html=True)
+    for o in others:
+        render_post("c", o, browser_id, is_open)
 
 
 def submit_other():
-    text = st.session_state.get("of_text") or ""
+    ss = st.session_state
+    text = ss.get("of_text") or ""
     if text.strip():
-        store.add_other(st.session_state.browser_id, text)
+        store.add_other(ss.browser_id, text, ss.get("of_name") or "")
 
 
 def render_participant_next(data, browser_id):
     board_state_changed("c", data)
     is_open = data["boards"]["c"]["open"]
     if is_open:
-        st.markdown("Pick as many as you like. Tap again to untick.")
+        st.markdown("Pick as many as you like. Tap again to untick. Add a comment to any option to say more.")
     else:
         st.markdown('<div class="pa-closed">Voting is closed. Thank you!</div>', unsafe_allow_html=True)
     next_options(browser_id)
+    st.markdown(f'<div class="pa-eyebrow" style="margin-top:22px">{esc(config.BOARDS["c"]["other_label"])}</div>', unsafe_allow_html=True)
     if is_open:
         with st.form("other_form", clear_on_submit=True):
-            st.text_input("Other: ___", max_chars=config.MAX_POST_CHARS, key="of_text")
+            st.text_area(config.BOARDS["c"]["other_label"], max_chars=config.MAX_POST_CHARS, height=80, key="of_text")
+            st.text_input("Name (optional, leave blank to stay anonymous)", max_chars=config.MAX_NAME_CHARS, key="of_name")
             st.markdown(f'<div class="pa-privacy">{esc(config.PRIVACY_LINE)}</div>', unsafe_allow_html=True)
-            st.form_submit_button("Add", use_container_width=True, on_click=submit_other)
+            st.form_submit_button("Add", type="primary", use_container_width=True, on_click=submit_other)
+    other_entries(browser_id)
 
 
 def render_participant(key, data, browser_id):
@@ -369,10 +419,16 @@ def summary_html(s: dict, themes: dict | None) -> str:
     when = time.strftime("%H:%M", time.localtime(s["generated_at"]))
     out = [f'<div class="pp-summary"><h3>Summary</h3><div class="note">Generated {when} · rule-based, counts only</div>']
     if key == "c":
-        out.append(f"<p>{t['participants']} participants · {t['votes']} votes</p>")
-        out += [f"<div>{o['votes']} ({o['pct']:.0f}%) · {esc(o['label'])}</div>" for o in s["options"]]
+        out.append(f"<p>{t['participants']} participants · {t['votes']} option votes · "
+                   f"{t['others']} Other entries · {t['comments']} comments</p>")
+        for o in s["options"]:
+            out.append(f"<div><b>{o['votes']} ({o['pct']:.0f}%)</b> · {esc(o['label'])}</div>")
+            out += [f"<div class='note' style='margin-left:28px'>“{esc(c['text'])}” · {c['votes']} upvotes</div>" for c in o["comments"]]
         if s["others"]:
-            out.append("<h4>Other suggestions</h4>" + "".join(f"<div>• {esc(o)}</div>" for o in s["others"]))
+            out.append("<h4>Other entries</h4>")
+            for o in s["others"]:
+                out.append(f"<div>• {esc(o['text'])} <b>({o['votes']} upvotes)</b></div>")
+                out += [f"<div class='note' style='margin-left:28px'>“{esc(c['text'])}”</div>" for c in o["comments"]]
         return "".join(out) + "</div>"
 
     seed = f" (+{t['seed_posts']} seed rows)" if t.get("seed_posts") else ""
@@ -446,14 +502,15 @@ def live_sidebar(key):
         st.download_button("QR code PNGs (all 3, .zip)", qr_zip(url), "pa-boards-qr.zip",
                            mime="application/zip", use_container_width=True)
 
-    with st.expander("Moderate (hide a post)"):
-        items = board["others"] if key == "c" else sorted(board["posts"], key=lambda p: -p["created_at"])
+    with st.expander("Moderate (hide a post or comment)"):
+        items = sorted(store.iter_items(board), key=lambda i: -i["created_at"])
         if not items:
             st.caption("Nothing posted yet.")
         for item in items:
-            label = ("Unhide: " if item["hidden"] else "Hide: ") + item["text"][:60]
+            kind = "comment" if item["id"].startswith("c") else "post"
+            label = ("Unhide " if item.get("hidden") else "Hide ") + f"{kind}: " + item["text"][:60]
             st.button(label, key=f"mod_{item['id']}", use_container_width=True,
-                      on_click=store.set_hidden, args=(key, item["id"], not item["hidden"]))
+                      on_click=store.set_hidden, args=(key, item["id"], not item.get("hidden")))
 
 
 @st.cache_data(max_entries=16)
@@ -585,13 +642,31 @@ def presenter_display(key):
         if key == "c":
             n = len(store.participants(data, "c"))
             st.markdown(f'<div class="pp-count">{n} {"person has" if n == 1 else "people have"} voted · voting {state}</div>', unsafe_allow_html=True)
+            s = summary.summarize_next(data)
             if board["revealed"]:
-                s = summary.summarize_next(data)
                 st.markdown(bars_html(s["options"], "pp-bars"), unsafe_allow_html=True)
-                if s["others"]:
-                    st.markdown('<div class="pp-summary"><h4>Other</h4>' + "".join(f"<div>• {esc(o)}</div>" for o in s["others"]) + "</div>", unsafe_allow_html=True)
+                top_comments = [
+                    f"<div><b>{esc(o['label'])}:</b> “{esc(o['comments'][0]['text'])}” · {plural(o['comments'][0]['votes'], 'upvote')}</div>"
+                    for o in s["options"] if o["comments"]
+                ]
+                if top_comments:
+                    st.markdown('<div class="pp-summary"><h4>Most-upvoted comment per option</h4>' + "".join(top_comments) + "</div>", unsafe_allow_html=True)
             else:
-                st.markdown('<div class="pp-summary">Results are hidden. Use “Reveal results” in the sidebar.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="pp-summary">Vote counts are hidden. Use “Reveal results” in the sidebar.</div>', unsafe_allow_html=True)
+                live = [
+                    f"<div><b>{esc(o['label'])}:</b> “{esc(c['text'])}”</div>"
+                    for o in sorted(s["options"], key=lambda o: config.NEXT_OPTIONS.index(o["label"])) for c in o["comments"][:2]
+                ]
+                if live:
+                    st.markdown('<div class="pp-summary"><h4>Comments so far</h4>' + "".join(live) + "</div>", unsafe_allow_html=True)
+            if s["others"]:
+                cards = "".join(
+                    f'<div class="pp-card"><div class="votes">{o["votes"]}<small>upvotes</small></div>'
+                    f'<div><div class="text">{esc(o["text"])}</div>'
+                    f'<div class="meta">{esc(plural(len(o["comments"]), "comment")) if o["comments"] else ""}</div></div></div>'
+                    for o in s["others"][:6]
+                )
+                st.markdown('<h3 style="margin-top:22px">Top Other ideas</h3><div class="pp-grid">' + cards + "</div>", unsafe_allow_html=True)
         else:
             posts = store.visible_posts(data, key)
             real = sum(1 for p in posts if not p.get("seed"))

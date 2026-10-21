@@ -11,6 +11,9 @@ PARTICIPANT_CSS = """
 }
 .stApp { background: var(--paper); color: var(--ink); }
 html, body, .stApp, .stMarkdown, p, label, input, textarea { font-size: 16px; }
+/* Widget labels and fields: 16px floor (and iOS won't zoom on focus). */
+[data-testid="stWidgetLabel"] p, .stTextInput input, .stTextArea textarea, .stNumberInput input,
+.stSelectbox div[data-baseweb="select"] { font-size: 16px !important; }
 .block-container { padding-left: 16px; padding-right: 16px; max-width: 760px; }
 .pa-eyebrow { font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--rust); font-weight: 700; }
 .pa-question { font-family: Georgia, serif; font-size: 26px; line-height: 1.25; font-weight: 700; margin: 4px 0 12px; color: var(--ink); }
@@ -38,7 +41,7 @@ div[data-testid="stButton"] button[kind="primary"], div[data-testid="stFormSubmi
 
 PRESENTER_CSS = PARTICIPANT_CSS + """
 <style>
-.block-container { max-width: 1840px; padding-top: 24px; }
+.block-container { max-width: 1840px; padding-top: 64px; }
 .pp-question { font-family: Georgia, serif; font-size: 58px; line-height: 1.1; font-weight: 700; color: var(--ink); margin: 0 0 8px; }
 .pp-count { font-size: 26px; color: var(--pencil); margin-bottom: 18px; }
 .pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 18px; }

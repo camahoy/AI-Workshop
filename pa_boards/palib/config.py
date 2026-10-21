@@ -24,7 +24,9 @@ BOARDS = {
     "c": {
         "letter": "C",
         "name": "What's next",
-        "question": "What would you like to see next on AI?",
+        "question": "What would you like to receive on AI?",
+        "vote_label": "I'd like this too",
+        "other_label": "Other: tell us what you'd like to receive",
     },
 }
 

@@ -66,8 +66,8 @@ with sync_playwright() as p:
     pres.screenshot(path=str(OUT / "presenter-board-a.png"))
 
     # ---- moderation hide
-    pres.get_by_text("Moderate (hide a post)").click()
-    pres.get_by_role("button", name="Hide: Turning long Teams threads").click()
+    pres.get_by_text("Moderate (hide a post or comment)").click()
+    pres.get_by_role("button", name="Hide post: Turning long Teams threads").click()
     expect(pres.locator(".pp-card", has_text="Turning long Teams threads")).to_have_count(0, timeout=10000)
     phone.get_by_role("button", name="↻ Refresh").click()  # phones redraw on tap, or every 30 s
     expect(phone.locator(".pa-post", has_text="Turning long Teams threads")).to_have_count(0, timeout=15000)
@@ -80,7 +80,7 @@ with sync_playwright() as p:
     expect(phone.get_by_role("button", name="☑  Use case showcases")).to_be_visible(timeout=10000)
     phone.get_by_role("button", name="☐  Privacy and data Q&A").click()
     expect(phone.get_by_role("button", name="☑  Privacy and data Q&A")).to_be_visible(timeout=10000)
-    expect(phone.get_by_text("Results appear here when the presenter reveals them.")).to_be_visible()
+    expect(phone.get_by_text("Vote counts appear here when the presenter reveals them.")).to_be_visible()
     pres.goto(f"{BASE}/?board=c&view=present")
     expect(pres.get_by_text("1 person has voted")).to_be_visible(timeout=15000)
     pres.get_by_role("button", name="Reveal results", exact=True).click()

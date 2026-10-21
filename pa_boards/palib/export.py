@@ -13,7 +13,7 @@ from palib import config, store, summary
 
 A_COLUMNS = ["Use", "Tool", "Task type", "Votes", "Comments", "Name"]
 B_COLUMNS = ["Time drain", "How often", "Minutes each time", "Votes", "Comments", "Source"]
-C_COLUMNS = ["Option", "Votes", "Percent of participants"]
+C_COLUMNS = ["Option", "Text", "Votes", "Comments"]
 
 
 def _safe(value):
@@ -22,9 +22,9 @@ def _safe(value):
     return value
 
 
-def _comments(post) -> str:
+def _comments(parent) -> str:
     return " | ".join(
-        f"{c['text']} ({c['name']})" if c.get("name") else c["text"] for c in post["comments"]
+        f"{c['text']} ({c['name']})" if c.get("name") else c["text"] for c in store.visible_comments(parent)
     )
 
 
@@ -45,8 +45,12 @@ def source_label(data) -> str:
 def board_csv(data: dict, key: str) -> bytes:
     if key == "c":
         s = summary.summarize_next(data)
-        rows = [[o["label"], o["votes"], f"{o['pct']:.0f}%"] for o in s["options"]]
-        rows += [[f"Other: {text}", "", ""] for text in s["others"]]
+        label_index = {label: i for i, label in enumerate(config.NEXT_OPTIONS)}
+        rows = [
+            [o["label"], "", o["votes"], _comments(store.option_comments(data, label_index[o["label"]]))]
+            for o in s["options"]
+        ]
+        rows += [["Other", o["text"], len(o["votes"]), _comments(o)] for o in store.visible_others(data)]
         return _csv(C_COLUMNS, rows)
 
     posts = store.visible_posts(data, key)

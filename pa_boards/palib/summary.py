@@ -23,11 +23,12 @@ def hours_per_month(post: dict) -> float | None:
 
 
 def _totals(data, key, posts):
+    comments = [c for p in posts for c in store.visible_comments(p)]
     return {
         "posts": sum(1 for p in posts if not p.get("seed")),
         "seed_posts": sum(1 for p in posts if p.get("seed")),
         "votes": sum(len(p["votes"]) for p in posts),
-        "comments": sum(len(p["comments"]) for p in posts),
+        "comments": len(comments),
         "participants": len(store.participants(data, key)),
     }
 
@@ -36,7 +37,7 @@ def _row(post):
     return {
         "text": post["text"],
         "votes": len(post["votes"]),
-        "comments": len(post["comments"]),
+        "comments": len(store.visible_comments(post)),
         "seed": bool(post.get("seed")),
     }
 
@@ -64,33 +65,55 @@ def summarize_posts(data: dict, key: str) -> dict:
     return result
 
 
+def _comment_row(c):
+    return {"text": c["text"], "votes": len(c.get("votes", []))}
+
+
 def summarize_next(data: dict) -> dict:
+    """Board C: votes per option (with % of participants), each option's
+    comments, and every Other entry with its upvotes and comments."""
     board = data["boards"]["c"]
     counts = Counter()
     for picks in board["picks"].values():
         counts.update(picks)
     respondents = len(store.participants(data, "c"))
-    options = [
-        {
+    options = []
+    for i, label in enumerate(config.NEXT_OPTIONS):
+        comments = store.ranked(store.option_comments(data, i))
+        options.append({
             "label": label,
             "votes": counts.get(i, 0),
             "pct": (100 * counts.get(i, 0) / respondents) if respondents else 0.0,
-        }
-        for i, label in enumerate(config.NEXT_OPTIONS)
-    ]
+            "comments": [_comment_row(c) for c in comments],
+        })
     options.sort(key=lambda o: -o["votes"])
+    others = [
+        {"text": o["text"], "votes": len(o["votes"]),
+         "comments": [_comment_row(c) for c in store.visible_comments(o)]}
+        for o in store.visible_others(data)
+    ]
+    n_comments = sum(len(o["comments"]) for o in options) + sum(len(o["comments"]) for o in others)
     return {
         "board": "c",
         "kind": "rule-based",
         "generated_at": time.time(),
-        "totals": {"participants": respondents, "votes": sum(counts.values())},
+        "totals": {
+            "participants": respondents,
+            "votes": sum(counts.values()),
+            "others": len(others),
+            "comments": n_comments,
+        },
         "options": options,
-        "others": [o["text"] for o in board["others"] if not o["hidden"]],
+        "others": others,
     }
 
 
 def summarize(data: dict, key: str) -> dict:
     return summarize_next(data) if key == "c" else summarize_posts(data, key)
+
+
+def plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
 
 
 def fmt_hours(h: float | None) -> str:
@@ -105,12 +128,19 @@ def to_text(summary: dict) -> str:
     when = time.strftime("%Y-%m-%d %H:%M", time.localtime(summary["generated_at"]))
     lines = [f"Board {b['letter']}: {b['name']}", f"Question: {b['question']}", f"Generated {when} ({summary['kind']})", ""]
     if key == "c":
-        lines.append(f"Participants: {t['participants']}  ·  Votes: {t['votes']}")
+        lines.append(f"Participants: {t['participants']}  ·  Option votes: {t['votes']}  ·  "
+                     f"Other entries: {t['others']}  ·  Comments: {t['comments']}")
         lines.append("")
         for o in summary["options"]:
             lines.append(f"{o['votes']:>4}  ({o['pct']:.0f}%)  {o['label']}")
+            lines += [f"        - {c['text']}  ({plural(c['votes'], 'upvote')})" for c in o["comments"]]
+        lines += ["", "Other entries (by upvotes):"]
         if summary["others"]:
-            lines += ["", "Other suggestions:"] + [f"- {o}" for o in summary["others"]]
+            for o in summary["others"]:
+                lines.append(f"- {o['text']}  ({plural(o['votes'], 'upvote')})")
+                lines += [f"    - {c['text']}" for c in o["comments"]]
+        else:
+            lines.append("- None")
         return "\n".join(lines)
 
     seed_note = f" (+{t['seed_posts']} seed rows)" if t.get("seed_posts") else ""
@@ -122,7 +152,7 @@ def to_text(summary: dict) -> str:
     for i, row in enumerate(summary["top"], 1):
         extra = f"  ·  {fmt_hours(row['hours'])}" if key == "b" else ""
         seed = "  [seed]" if row["seed"] else ""
-        lines.append(f"{i}. {row['text']}  ({row['votes']} votes, {row['comments']} comments{extra}){seed}")
+        lines.append(f"{i}. {row['text']}  ({plural(row['votes'], 'vote')}, {plural(row['comments'], 'comment')}{extra}){seed}")
     if key == "a":
         lines += ["", "By tool:"] + [f"- {name}: {n}" for name, n in summary["by_tool"]]
         lines += ["", "By task type:"] + [f"- {name}: {n}" for name, n in summary["by_task"]]

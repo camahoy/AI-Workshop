@@ -149,7 +149,8 @@ def to_text(themes: dict) -> str:
     for key, title in (("a", "Board A: How we use AI"), ("b", "Board B: Time drains")):
         lines.append(title)
         for t in themes[key]:
-            lines.append(f"- {t['name']}: {t['posts']} posts, {t['votes']} votes")
+            lines.append(f"- {t['name']}: {t['posts']} post{'' if t['posts'] == 1 else 's'}, "
+                         f"{t['votes']} vote{'' if t['votes'] == 1 else 's'}")
             lines += [f'    "{q}"' for q in t["quotes"]]
         lines.append("")
     lines.append(build_next_line(themes))

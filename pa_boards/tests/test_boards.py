@@ -126,7 +126,33 @@ def test_board_c_multiselect_and_pct(store):
     first = s["options"][0]
     assert first["label"] == config.NEXT_OPTIONS[0] and first["votes"] == 2
     assert round(first["pct"]) == 67
-    assert s["others"] == ["Office hours"]
+    assert [o["text"] for o in s["others"]] == ["Office hours"]
+
+
+def test_board_c_comments_and_others(store):
+    store.toggle_pick("b1", 2)
+    assert store.add_comment("c", store.option_parent(4), "b2", "Tutorials on prompts for proposals", "Kim")
+    assert store.add_comment("c", store.option_parent(4), "b3", "Short videos please")
+    store.add_other("b4", "Monthly office hours")
+    data = store.load()
+    other = data["boards"]["c"]["others"][0]
+    by_text = {c["text"]: c for c in store.option_comments(data, 4)}
+    short, prompts = by_text["Short videos please"], by_text["Tutorials on prompts for proposals"]
+    # comments and Others have their own upvotes; one per browser, undo works
+    assert store.toggle_vote("c", prompts["id"], "b5") is True
+    assert store.toggle_vote("c", prompts["id"], "b6") is True
+    assert store.toggle_vote("c", prompts["id"], "b6") is False
+    assert store.toggle_vote("c", other["id"], "b5") is True
+    assert store.add_comment("c", other["id"], "b6", "Fridays work best")
+    store.set_hidden("c", short["id"], True)
+    s = summary.summarize(store.load(), "c")
+    opt = next(o for o in s["options"] if o["label"] == config.NEXT_OPTIONS[4])
+    assert opt["votes"] == 0 and opt["comments"] == [{"text": prompts["text"], "votes": 1}]
+    assert s["others"] == [{"text": "Monthly office hours", "votes": 1,
+                            "comments": [{"text": "Fridays work best", "votes": 0}]}]
+    assert s["totals"]["participants"] == 6
+    text = summary.to_text(s)
+    assert "Short videos please" not in text and "Fridays work best" in text
 
 
 def _rows(blob):
@@ -152,8 +178,13 @@ def test_export_columns(store):
     assert live[1:4] == ["Weekly", "45", "0"] and live[5] == "Live board, 2099-11-05"
     assert sum("seed" in r[5] for r in rows_b[1:]) == len(config.SEEDS_B)
 
+    store.add_other("b9", "Lunch-and-learn")
+    store.add_comment("c", store.option_parent(0), "b9", "Two minutes each")
+    data = store.load()
     rows_c = _rows(export.board_csv(data, "c"))
-    assert rows_c[0] == ["Option", "Votes", "Percent of participants"] and len(rows_c) == 6
+    assert rows_c[0] == ["Option", "Text", "Votes", "Comments"] and len(rows_c) == 7
+    assert ["Other", "Lunch-and-learn", "0", ""] in rows_c
+    assert [config.NEXT_OPTIONS[0], "", "0", "Two minutes each"] in rows_c
 
     z = zipfile.ZipFile(io.BytesIO(export.all_zip(data)))
     assert len(z.namelist()) == 4 and "summary.txt" in z.namelist()
